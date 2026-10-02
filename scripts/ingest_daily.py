@@ -8,6 +8,7 @@ For a given date (default: today), this:
      player on the opposing roster (pitchers don't bat in most games, so
      we skip opposing pitchers as "batters").
   4. Upserts everything into the local SQLite database.
+  
 
 This keeps the ongoing API usage small and predictable: roughly
 (games today) x (2 lineups x ~13 position players) calls, once a day,

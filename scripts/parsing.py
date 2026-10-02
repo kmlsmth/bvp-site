@@ -76,7 +76,9 @@ def parse_vs_player(raw: dict) -> tuple[dict | None, list[dict]]:
                 row["pitcher_id"] = split["pitcher"]["id"]
                 row["season"] = split.get("season")
                 row["team_id"] = split.get("team", {}).get("id")
+                row["team_name"] = split.get("team", {}).get("name")
                 row["opponent_id"] = split.get("opponent", {}).get("id")
+                row["opponent_name"] = split.get("opponent", {}).get("name")
                 season_rows.append(row)
 
     return career_row, season_rows

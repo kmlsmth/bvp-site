@@ -53,8 +53,11 @@ def ingest_date(target_date: str, force: bool = False) -> int:
         for game in games:
             db.upsert_team(conn, game["home_team_id"], game["home_team_name"])
             db.upsert_team(conn, game["away_team_id"], game["away_team_name"])
-            db.upsert_game(conn, game)
 
+            # Players referenced by a row must exist before the row that
+            # references them is inserted (foreign keys are enforced) --
+            # so upsert the probable pitchers *before* upsert_game, since
+            # games.home/away_probable_pitcher_id points at players.id.
             home_pitcher = game["home_probable_pitcher_id"]
             away_pitcher = game["away_probable_pitcher_id"]
             if home_pitcher:
@@ -63,6 +66,8 @@ def ingest_date(target_date: str, force: bool = False) -> int:
             if away_pitcher:
                 db.upsert_player(conn, away_pitcher,
                                   game["away_probable_pitcher_name"], role="pitcher")
+
+            db.upsert_game(conn, game)
             conn.commit()
 
             matchup_pairs = []
@@ -116,6 +121,15 @@ def _ingest_matchup(conn, batter_id: int, pitcher_id: int) -> None:
         return  # no history between this pair yet
     db.upsert_matchup_career(conn, career)
     for s in seasons:
+        # A season row can reference teams from years past -- not just
+        # today's two teams -- since career history spans whatever teams
+        # the batter/pitcher were on at the time. Those teams must exist
+        # before the row referencing them does (same foreign-key reason
+        # as the game/pitcher ordering above).
+        if s.get("team_id") is not None:
+            db.upsert_team(conn, s["team_id"], s.get("team_name") or "Unknown")
+        if s.get("opponent_id") is not None:
+            db.upsert_team(conn, s["opponent_id"], s.get("opponent_name") or "Unknown")
         db.upsert_matchup_season(conn, s)
     conn.commit()
     time.sleep(REQUEST_PAUSE_SECONDS)

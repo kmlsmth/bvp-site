@@ -88,18 +88,16 @@ FAKE_VENUE_RAW = {
     }],
 }
 
-# Realistic shape of an NWS hourly forecast response (trimmed to one period).
-FAKE_HOURLY_FORECAST = {
-    "properties": {
-        "periods": [{
-            "startTime": "2026-09-25T19:00:00-04:00",
-            "temperature": 68,
-            "windSpeed": "9 mph",
-            "windDirection": "SW",
-            "shortForecast": "Partly Cloudy",
-        }],
-    },
-}
+# Shape returned by weather_api.get_hourly_forecast() (one period; the real
+# function normalizes Open-Meteo's raw response into exactly this shape).
+FAKE_HOURLY_PERIODS = [{
+    "time": "2026-09-25T23:00",
+    "temp_f": 68,
+    "wind_speed_mph": 9,
+    "wind_dir_deg": 225.0,
+    "wind_dir_compass": "SW",
+    "sky": "Partly cloudy",
+}]
 
 # Roster for team 139 (away, opposing the home probable pitcher Snell) --
 # just enough to exercise the batter-pairing loop.
@@ -134,8 +132,7 @@ def main() -> None:
          mock.patch("mlb_api.get_team_roster", side_effect=fake_get_team_roster), \
          mock.patch("mlb_api.get_vs_player", side_effect=fake_get_vs_player), \
          mock.patch("mlb_api.get_venue", return_value=FAKE_VENUE_RAW), \
-         mock.patch("weather_api.get_forecast_hourly_url", return_value="https://api.weather.gov/fake-grid/hourly"), \
-         mock.patch("weather_api.get_hourly_forecast", return_value=FAKE_HOURLY_FORECAST["properties"]["periods"]), \
+         mock.patch("weather_api.get_hourly_forecast", return_value=FAKE_HOURLY_PERIODS), \
          mock.patch("ingest_daily.REQUEST_PAUSE_SECONDS", 0):
         games_count = ingest_daily.ingest_date("2026-09-25")
 
@@ -161,7 +158,7 @@ def main() -> None:
             "SELECT wind_speed_mph, wind_dir_deg, wind_dir_compass, temp_f, sky "
             "FROM game_weather WHERE game_pk = 777001"
         ).fetchone()
-        assert weather_row == (9, 225.0, "SW", 68, "Partly Cloudy"), weather_row
+        assert weather_row == (9, 225.0, "SW", 68, "Partly cloudy"), weather_row
         print(f"game_weather row OK: {weather_row}")
 
         career_row = conn.execute(

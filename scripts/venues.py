@@ -9,7 +9,7 @@ re-fetched every ingestion run, since a forecast changes.
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -45,29 +45,14 @@ def refresh_weather(conn, game: dict) -> None:
         return
 
     venue_row = conn.execute(
-        "SELECT lat, lon, nws_forecast_hourly_url FROM venues WHERE id = ?",
-        (venue_id,),
+        "SELECT lat, lon FROM venues WHERE id = ?", (venue_id,),
     ).fetchone()
     if venue_row is None or venue_row[0] is None or venue_row[1] is None:
         return  # no coordinates on file (e.g. azimuth/location wasn't published) -- nothing to look up
-    lat, lon, forecast_url = venue_row
-
-    if not forecast_url:
-        try:
-            forecast_url = weather_api.get_forecast_hourly_url(lat, lon)
-        except Exception as exc:
-            print(f"    weather: couldn't resolve forecast grid for venue {venue_id}: {exc}")
-            return
-        if not forecast_url:
-            return
-        conn.execute(
-            "UPDATE venues SET nws_forecast_hourly_url = ? WHERE id = ?",
-            (forecast_url, venue_id),
-        )
-        conn.commit()
+    lat, lon = venue_row
 
     try:
-        periods = weather_api.get_hourly_forecast(forecast_url)
+        periods = weather_api.get_hourly_forecast(lat, lon)
     except Exception as exc:
         print(f"    weather: couldn't fetch forecast for venue {venue_id}: {exc}")
         return
@@ -76,15 +61,14 @@ def refresh_weather(conn, game: dict) -> None:
     if period is None:
         return
 
-    compass = period.get("windDirection")
     db.upsert_game_weather(conn, {
         "game_pk": game["game_pk"],
-        "wind_speed_mph": weather_api.parse_wind_speed(period.get("windSpeed")),
-        "wind_dir_deg": weather_api.COMPASS_TO_DEGREES.get(compass),
-        "wind_dir_compass": compass,
-        "temp_f": period.get("temperature"),
-        "sky": period.get("shortForecast"),
-        "forecast_time": period.get("startTime"),
+        "wind_speed_mph": period.get("wind_speed_mph"),
+        "wind_dir_deg": period.get("wind_dir_deg"),
+        "wind_dir_compass": period.get("wind_dir_compass"),
+        "temp_f": period.get("temp_f"),
+        "sky": period.get("sky"),
+        "forecast_time": period.get("time"),
     })
     conn.commit()
 
@@ -96,12 +80,16 @@ def _closest_period(periods: list[dict], target_iso: str | None) -> dict | None:
         return periods[0]
     try:
         target = datetime.fromisoformat(target_iso.replace("Z", "+00:00"))
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=timezone.utc)
     except ValueError:
         return periods[0]
 
     def _diff(p: dict) -> float:
         try:
-            start = datetime.fromisoformat(p["startTime"])
+            # Open-Meteo times come back in GMT/UTC with no offset suffix
+            # (we don't pass a timezone param), so treat them as UTC.
+            start = datetime.fromisoformat(p["time"]).replace(tzinfo=timezone.utc)
         except (KeyError, ValueError):
             return float("inf")
         return abs((start - target).total_seconds())

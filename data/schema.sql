@@ -29,23 +29,24 @@ CREATE TABLE IF NOT EXISTS venues (
     center                  INTEGER,
     right_center            INTEGER,
     right_line              INTEGER,
-    nws_forecast_hourly_url TEXT,   -- cached from the NWS /points lookup, so we
-                                    -- only need one request per refresh after that
+    nws_forecast_hourly_url TEXT,   -- unused (left over from an earlier weather
+                                    -- source, National Weather Service, that
+                                    -- only covered U.S. parks); harmless to keep
     updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Wind/temperature snapshot for one game, pulled from the National
--- Weather Service (free, no key) using the venue's coordinates. Replaced
--- each ingestion run, so it reflects whatever forecast was current as of
--- that run, not a live-updating value.
+-- Wind/temperature snapshot for one game, pulled from Open-Meteo (free, no
+-- key, worldwide coverage) using the venue's coordinates. Replaced each
+-- ingestion run, so it reflects whatever forecast was current as of that
+-- run, not a live-updating value.
 CREATE TABLE IF NOT EXISTS game_weather (
     game_pk         INTEGER PRIMARY KEY REFERENCES games(game_pk),
     wind_speed_mph  INTEGER,
     wind_dir_deg    REAL,     -- meteorological "from" bearing, true compass
-    wind_dir_compass TEXT,    -- e.g. "ENE", as NWS reports it
+    wind_dir_compass TEXT,    -- e.g. "ENE"
     temp_f          INTEGER,
     sky             TEXT,
-    forecast_time   TEXT,     -- the forecast period's own start time, from NWS
+    forecast_time   TEXT,     -- the forecast period's own start time (UTC)
     fetched_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

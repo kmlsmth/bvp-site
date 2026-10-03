@@ -74,15 +74,21 @@ def games():
 
     rows = query_db(
         """
-        SELECT g.game_pk, g.game_date, g.game_type, g.status,
+        SELECT g.game_pk, g.game_date, g.game_date_time, g.game_type, g.status,
                ht.name AS home_team, at.name AS away_team,
                hp.full_name AS home_probable_pitcher, g.home_probable_pitcher_id,
-               ap.full_name AS away_probable_pitcher, g.away_probable_pitcher_id
+               ap.full_name AS away_probable_pitcher, g.away_probable_pitcher_id,
+               v.id AS venue_id, v.name AS venue_name, v.azimuth_angle AS venue_azimuth_angle,
+               v.roof_type AS venue_roof_type,
+               gw.wind_speed_mph, gw.wind_dir_deg, gw.wind_dir_compass,
+               gw.temp_f, gw.sky, gw.forecast_time
         FROM games g
         LEFT JOIN teams ht ON ht.id = g.home_team_id
         LEFT JOIN teams at ON at.id = g.away_team_id
         LEFT JOIN players hp ON hp.id = g.home_probable_pitcher_id
         LEFT JOIN players ap ON ap.id = g.away_probable_pitcher_id
+        LEFT JOIN venues v ON v.id = g.venue_id
+        LEFT JOIN game_weather gw ON gw.game_pk = g.game_pk
         WHERE g.game_date = ?
         ORDER BY g.game_pk
         """,

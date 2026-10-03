@@ -10,8 +10,8 @@ from __future__ import annotations
 # "stat" object shape.
 STAT_FIELDS = [
     "gamesPlayed", "atBats", "plateAppearances", "hits", "doubles", "triples",
-    "homeRuns", "strikeOuts", "baseOnBalls", "intentionalWalks", "hitByPitch",
-    "totalBases", "rbi", "leftOnBase", "sacBunts", "sacFlies",
+    "homeRuns", "runs", "strikeOuts", "baseOnBalls", "intentionalWalks", "hitByPitch",
+    "totalBases", "rbi", "stolenBases", "caughtStealing", "leftOnBase", "sacBunts", "sacFlies",
     "groundIntoDoublePlay", "numberOfPitches", "avg", "obp", "slg", "ops",
 ]
 
@@ -24,12 +24,15 @@ FIELD_TO_COLUMN = {
     "doubles": "doubles",
     "triples": "triples",
     "homeRuns": "home_runs",
+    "runs": "runs",
     "strikeOuts": "strike_outs",
     "baseOnBalls": "base_on_balls",
     "intentionalWalks": "intentional_walks",
     "hitByPitch": "hit_by_pitch",
     "totalBases": "total_bases",
     "rbi": "rbi",
+    "stolenBases": "stolen_bases",
+    "caughtStealing": "caught_stealing",
     "leftOnBase": "left_on_base",
     "sacBunts": "sac_bunts",
     "sacFlies": "sac_flies",
@@ -92,11 +95,15 @@ def parse_schedule(raw: dict) -> list[dict]:
             teams = g.get("teams", {})
             home = teams.get("home", {})
             away = teams.get("away", {})
+            venue = g.get("venue", {})
             games.append({
                 "game_pk": g.get("gamePk"),
                 "game_date": g.get("officialDate"),
+                "game_date_time": g.get("gameDate"),  # full first-pitch timestamp, for matching a weather forecast hour
                 "game_type": g.get("gameType"),
                 "status": g.get("status", {}).get("detailedState"),
+                "venue_id": venue.get("id"),
+                "venue_name": venue.get("name"),
                 "home_team_id": home.get("team", {}).get("id"),
                 "home_team_name": home.get("team", {}).get("name"),
                 "away_team_id": away.get("team", {}).get("id"),
@@ -107,6 +114,40 @@ def parse_schedule(raw: dict) -> list[dict]:
                 "away_probable_pitcher_name": away.get("probablePitcher", {}).get("fullName"),
             })
     return games
+
+
+def parse_venue(raw: dict) -> dict | None:
+    """One ballpark's location, orientation, and field dimensions.
+
+    Returns None if the API didn't return a venue at all (bad id). A
+    venue missing azimuth_angle or lat/lon (MLB doesn't publish location
+    data for every park) still parses fine -- those fields just come
+    back None, and callers (scripts/venues.py) handle that gracefully.
+    """
+    venues = raw.get("venues") or []
+    if not venues:
+        return None
+    v = venues[0]
+    location = v.get("location", {}) or {}
+    coords = location.get("defaultCoordinates", {}) or {}
+    field = v.get("fieldInfo", {}) or {}
+    return {
+        "id": v.get("id"),
+        "name": v.get("name"),
+        "city": location.get("city"),
+        "state": location.get("stateAbbrev") or location.get("state"),
+        "lat": coords.get("latitude"),
+        "lon": coords.get("longitude"),
+        "azimuth_angle": location.get("azimuthAngle"),
+        "elevation": location.get("elevation"),
+        "roof_type": field.get("roofType"),
+        "capacity": field.get("capacity"),
+        "left_line": field.get("leftLine"),
+        "left_center": field.get("leftCenter"),
+        "center": field.get("center"),
+        "right_center": field.get("rightCenter"),
+        "right_line": field.get("rightLine"),
+    }
 
 
 def parse_roster(raw: dict) -> list[dict]:

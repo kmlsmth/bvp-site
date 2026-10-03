@@ -7,6 +7,48 @@ CREATE TABLE IF NOT EXISTS teams (
     name        TEXT NOT NULL
 );
 
+-- One row per MLB ballpark. Filled in lazily the first time a game
+-- references it (see scripts/venues.py) -- stadiums don't move, so this
+-- is write-once-per-park, not a daily refresh. azimuth_angle is the
+-- compass bearing from home plate toward straightaway center field,
+-- which is what lets the weather card draw wind direction relative to
+-- the actual field instead of just true north.
+CREATE TABLE IF NOT EXISTS venues (
+    id                      INTEGER PRIMARY KEY,
+    name                    TEXT NOT NULL,
+    city                    TEXT,
+    state                   TEXT,
+    lat                     REAL,
+    lon                     REAL,
+    azimuth_angle           REAL,   -- degrees; NULL if MLB doesn't publish one for this park
+    elevation               INTEGER,
+    roof_type               TEXT,   -- Open / Retractable / Dome / Indoor, as MLB reports it
+    capacity                INTEGER,
+    left_line               INTEGER,
+    left_center             INTEGER,
+    center                  INTEGER,
+    right_center            INTEGER,
+    right_line              INTEGER,
+    nws_forecast_hourly_url TEXT,   -- cached from the NWS /points lookup, so we
+                                    -- only need one request per refresh after that
+    updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Wind/temperature snapshot for one game, pulled from the National
+-- Weather Service (free, no key) using the venue's coordinates. Replaced
+-- each ingestion run, so it reflects whatever forecast was current as of
+-- that run, not a live-updating value.
+CREATE TABLE IF NOT EXISTS game_weather (
+    game_pk         INTEGER PRIMARY KEY REFERENCES games(game_pk),
+    wind_speed_mph  INTEGER,
+    wind_dir_deg    REAL,     -- meteorological "from" bearing, true compass
+    wind_dir_compass TEXT,    -- e.g. "ENE", as NWS reports it
+    temp_f          INTEGER,
+    sky             TEXT,
+    forecast_time   TEXT,     -- the forecast period's own start time, from NWS
+    fetched_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS players (
     id          INTEGER PRIMARY KEY,
     full_name   TEXT NOT NULL,
@@ -23,8 +65,10 @@ CREATE TABLE IF NOT EXISTS players (
 CREATE TABLE IF NOT EXISTS games (
     game_pk                 INTEGER PRIMARY KEY,
     game_date               TEXT NOT NULL,       -- officialDate, e.g. '2026-10-02'
+    game_date_time           TEXT,                -- full first-pitch timestamp (UTC ISO), for picking the closest weather forecast hour
     game_type               TEXT,                -- R / F / D / L / W (reg season, postseason rounds)
     status                  TEXT,
+    venue_id                INTEGER REFERENCES venues(id),
     home_team_id            INTEGER REFERENCES teams(id),
     away_team_id            INTEGER REFERENCES teams(id),
     home_probable_pitcher_id INTEGER REFERENCES players(id),
@@ -44,12 +88,15 @@ CREATE TABLE IF NOT EXISTS matchup_career (
     doubles         INTEGER,
     triples         INTEGER,
     home_runs       INTEGER,
+    runs            INTEGER,
     strike_outs     INTEGER,
     base_on_balls   INTEGER,
     intentional_walks INTEGER,
     hit_by_pitch    INTEGER,
     total_bases     INTEGER,
     rbi             INTEGER,
+    stolen_bases    INTEGER,
+    caught_stealing INTEGER,
     left_on_base    INTEGER,
     sac_bunts       INTEGER,
     sac_flies       INTEGER,
@@ -78,12 +125,15 @@ CREATE TABLE IF NOT EXISTS matchup_season (
     doubles         INTEGER,
     triples         INTEGER,
     home_runs       INTEGER,
+    runs            INTEGER,
     strike_outs     INTEGER,
     base_on_balls   INTEGER,
     intentional_walks INTEGER,
     hit_by_pitch    INTEGER,
     total_bases     INTEGER,
     rbi             INTEGER,
+    stolen_bases    INTEGER,
+    caught_stealing INTEGER,
     left_on_base    INTEGER,
     sac_bunts       INTEGER,
     sac_flies       INTEGER,

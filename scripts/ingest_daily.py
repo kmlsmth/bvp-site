@@ -8,7 +8,6 @@ For a given date (default: today), this:
      player on the opposing roster (pitchers don't bat in most games, so
      we skip opposing pitchers as "batters").
   4. Upserts everything into the local SQLite database.
-  
 
 This keeps the ongoing API usage small and predictable: roughly
 (games today) x (2 lineups x ~13 position players) calls, once a day,
@@ -30,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db
 import mlb_api
 import parsing
+import venues as venues_mod
 
 REQUEST_PAUSE_SECONDS = 0.3  # be a polite citizen of a free public API
 
@@ -68,8 +68,15 @@ def ingest_date(target_date: str, force: bool = False) -> int:
                 db.upsert_player(conn, away_pitcher,
                                   game["away_probable_pitcher_name"], role="pitcher")
 
+            # Same reasoning for the venue: games.venue_id points at
+            # venues.id, so the venue row has to exist first. This is a
+            # no-op after the first time any game references this park.
+            venues_mod.ensure_venue(conn, game.get("venue_id"))
+
             db.upsert_game(conn, game)
             conn.commit()
+
+            venues_mod.refresh_weather(conn, game)
 
             matchup_pairs = []
             if home_pitcher:
@@ -137,5 +144,7 @@ def _ingest_matchup(conn, batter_id: int, pitcher_id: int) -> None:
 
 
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else date.today().isoformat()
-    ingest_date(target)
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    force = "--force" in sys.argv[1:]
+    target = args[0] if args else date.today().isoformat()
+    ingest_date(target, force=force)

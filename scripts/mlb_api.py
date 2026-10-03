@@ -21,7 +21,7 @@ def get_schedule(date: str, sport_id: int = 1) -> dict:
     params = {
         "sportId": sport_id,
         "date": date,
-        "hydrate": "probablePitcher,team",
+        "hydrate": "probablePitcher,team,venue",
     }
     resp = requests.get(url, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
@@ -32,6 +32,21 @@ def get_team_roster(team_id: int, roster_type: str = "active") -> dict:
     """Current roster for a team (used to find the opposing lineup)."""
     url = f"{BASE_URL}/teams/{team_id}/roster"
     params = {"rosterType": roster_type}
+    resp = requests.get(url, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_venue(venue_id: int) -> dict:
+    """Location, field dimensions, and orientation for one ballpark.
+
+    hydrate=location is what gives us lat/long and azimuthAngle (the
+    compass bearing from home plate to straightaway center field) --
+    everything the weather card needs, from the same free API we're
+    already using for every other part of this site.
+    """
+    url = f"{BASE_URL}/venues/{venue_id}"
+    params = {"hydrate": "location,fieldInfo"}
     resp = requests.get(url, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json()

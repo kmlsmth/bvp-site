@@ -101,14 +101,16 @@ def upsert_game(conn: sqlite3.Connection, game: dict) -> None:
     conn.execute(
         """
         INSERT INTO games (
-            game_pk, game_date, game_type, status,
+            game_pk, game_date, game_date_time, game_type, status, venue_id,
             home_team_id, away_team_id,
             home_probable_pitcher_id, away_probable_pitcher_id, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(game_pk) DO UPDATE SET
             game_date = excluded.game_date,
+            game_date_time = excluded.game_date_time,
             game_type = excluded.game_type,
             status = excluded.status,
+            venue_id = excluded.venue_id,
             home_team_id = excluded.home_team_id,
             away_team_id = excluded.away_team_id,
             home_probable_pitcher_id = excluded.home_probable_pitcher_id,
@@ -116,17 +118,51 @@ def upsert_game(conn: sqlite3.Connection, game: dict) -> None:
             updated_at = datetime('now')
         """,
         (
-            game["game_pk"], game["game_date"], game["game_type"], game["status"],
+            game["game_pk"], game["game_date"], game.get("game_date_time"),
+            game["game_type"], game["status"], game.get("venue_id"),
             game["home_team_id"], game["away_team_id"],
             game["home_probable_pitcher_id"], game["away_probable_pitcher_id"],
         ),
     )
 
 
+def upsert_venue(conn: sqlite3.Connection, venue: dict) -> None:
+    cols = ["id", "name", "city", "state", "lat", "lon", "azimuth_angle",
+            "elevation", "roof_type", "capacity", "left_line", "left_center",
+            "center", "right_center", "right_line"]
+    placeholders = ", ".join("?" for _ in cols)
+    update_clause = ", ".join(f"{c} = excluded.{c}" for c in cols if c != "id")
+    conn.execute(
+        f"""
+        INSERT INTO venues ({", ".join(cols)}, updated_at)
+        VALUES ({placeholders}, datetime('now'))
+        ON CONFLICT(id) DO UPDATE SET
+            {update_clause}, updated_at = datetime('now')
+        """,
+        [venue.get(c) for c in cols],
+    )
+
+
+def upsert_game_weather(conn: sqlite3.Connection, weather: dict) -> None:
+    cols = ["game_pk", "wind_speed_mph", "wind_dir_deg", "wind_dir_compass",
+            "temp_f", "sky", "forecast_time"]
+    placeholders = ", ".join("?" for _ in cols)
+    update_clause = ", ".join(f"{c} = excluded.{c}" for c in cols if c != "game_pk")
+    conn.execute(
+        f"""
+        INSERT INTO game_weather ({", ".join(cols)}, fetched_at)
+        VALUES ({placeholders}, datetime('now'))
+        ON CONFLICT(game_pk) DO UPDATE SET
+            {update_clause}, fetched_at = datetime('now')
+        """,
+        [weather.get(c) for c in cols],
+    )
+
+
 _CAREER_COLS = [
     "games_played", "at_bats", "plate_appearances", "hits", "doubles", "triples",
-    "home_runs", "strike_outs", "base_on_balls", "intentional_walks", "hit_by_pitch",
-    "total_bases", "rbi", "left_on_base", "sac_bunts", "sac_flies",
+    "home_runs", "runs", "strike_outs", "base_on_balls", "intentional_walks", "hit_by_pitch",
+    "total_bases", "rbi", "stolen_bases", "caught_stealing", "left_on_base", "sac_bunts", "sac_flies",
     "ground_into_double_play", "number_of_pitches", "avg", "obp", "slg", "ops",
 ]
 

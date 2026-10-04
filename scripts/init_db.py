@@ -20,7 +20,9 @@ SCHEMA_PATH = ROOT / "data" / "schema.sql"
 # manual migration step.
 _NEW_COLUMNS = {
     "games": [("venue_id", "INTEGER REFERENCES venues(id)"),
-              ("game_date_time", "TEXT")],
+              ("game_date_time", "TEXT"),
+              ("home_lineup", "TEXT"),
+              ("away_lineup", "TEXT")],
     "matchup_career": [("runs", "INTEGER"), ("stolen_bases", "INTEGER"),
                         ("caught_stealing", "INTEGER")],
     "matchup_season": [("runs", "INTEGER"), ("stolen_bases", "INTEGER"),

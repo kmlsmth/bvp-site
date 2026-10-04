@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS games (
     away_team_id            INTEGER REFERENCES teams(id),
     home_probable_pitcher_id INTEGER REFERENCES players(id),
     away_probable_pitcher_id INTEGER REFERENCES players(id),
+    home_lineup              TEXT,                -- JSON array of {order, id, name, position}; NULL until MLB posts it (usually 1-3 hrs before first pitch)
+    away_lineup              TEXT,                -- same, away team
     updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

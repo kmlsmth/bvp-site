@@ -87,6 +87,26 @@ def parse_vs_player(raw: dict) -> tuple[dict | None, list[dict]]:
     return career_row, season_rows
 
 
+def _lineup_rows(players: list[dict]) -> list[dict]:
+    """hydrate=lineups gives each side's players as a plain list already in
+    batting-order sequence (1st = leadoff) -- there's no explicit "batting
+    order" number on each entry, so the array position *is* the order.
+    This is MLB's confirmed starting lineup once they've submitted it
+    (usually 1-3 hours before first pitch), not an early projection/guess
+    -- there's no "likely lineup" data in this public API, so the front
+    end should say "not announced yet" rather than imply a projection."""
+    rows = []
+    for i, p in enumerate(players or []):
+        pos = p.get("primaryPosition") or {}
+        rows.append({
+            "order": i + 1,
+            "id": p.get("id"),
+            "name": p.get("fullName"),
+            "position": pos.get("abbreviation"),
+        })
+    return rows
+
+
 def parse_schedule(raw: dict) -> list[dict]:
     """Flatten the schedule response into one row per game."""
     games = []
@@ -96,6 +116,7 @@ def parse_schedule(raw: dict) -> list[dict]:
             home = teams.get("home", {})
             away = teams.get("away", {})
             venue = g.get("venue", {})
+            lineups = g.get("lineups") or {}
             games.append({
                 "game_pk": g.get("gamePk"),
                 "game_date": g.get("officialDate"),
@@ -112,6 +133,8 @@ def parse_schedule(raw: dict) -> list[dict]:
                 "home_probable_pitcher_name": home.get("probablePitcher", {}).get("fullName"),
                 "away_probable_pitcher_id": away.get("probablePitcher", {}).get("id"),
                 "away_probable_pitcher_name": away.get("probablePitcher", {}).get("fullName"),
+                "home_lineup": _lineup_rows(lineups.get("homePlayers")),
+                "away_lineup": _lineup_rows(lineups.get("awayPlayers")),
             })
     return games
 

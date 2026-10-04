@@ -1,6 +1,7 @@
 """Upsert helpers for writing parsed rows into the SQLite database."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -97,14 +98,23 @@ def upsert_team(conn: sqlite3.Connection, team_id: int, name: str) -> None:
     )
 
 
+def _lineup_json(rows) -> str | None:
+    """A lineup is only worth storing once it actually has batters in it --
+    an empty list (not yet announced) stays NULL rather than "[]", so the
+    front end's single "not announced yet" check (falsy) covers both the
+    column never having been touched and a prior pull seeing nothing yet."""
+    return json.dumps(rows) if rows else None
+
+
 def upsert_game(conn: sqlite3.Connection, game: dict) -> None:
     conn.execute(
         """
         INSERT INTO games (
             game_pk, game_date, game_date_time, game_type, status, venue_id,
             home_team_id, away_team_id,
-            home_probable_pitcher_id, away_probable_pitcher_id, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            home_probable_pitcher_id, away_probable_pitcher_id,
+            home_lineup, away_lineup, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(game_pk) DO UPDATE SET
             game_date = excluded.game_date,
             game_date_time = excluded.game_date_time,
@@ -115,6 +125,12 @@ def upsert_game(conn: sqlite3.Connection, game: dict) -> None:
             away_team_id = excluded.away_team_id,
             home_probable_pitcher_id = excluded.home_probable_pitcher_id,
             away_probable_pitcher_id = excluded.away_probable_pitcher_id,
+            -- Once a lineup is posted it doesn't go back to unposted, but a
+            -- later pull could still correct a late scratch/substitution --
+            -- so only overwrite with a fresh non-empty value, never clobber
+            -- an already-stored lineup with a since-stale empty one.
+            home_lineup = COALESCE(excluded.home_lineup, games.home_lineup),
+            away_lineup = COALESCE(excluded.away_lineup, games.away_lineup),
             updated_at = datetime('now')
         """,
         (
@@ -122,6 +138,7 @@ def upsert_game(conn: sqlite3.Connection, game: dict) -> None:
             game["game_type"], game["status"], game.get("venue_id"),
             game["home_team_id"], game["away_team_id"],
             game["home_probable_pitcher_id"], game["away_probable_pitcher_id"],
+            _lineup_json(game.get("home_lineup")), _lineup_json(game.get("away_lineup")),
         ),
     )
 

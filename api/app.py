@@ -25,6 +25,7 @@ Run locally:  python3 api/app.py   (serves on http://localhost:8000)
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import sys
@@ -143,6 +144,7 @@ def games():
                g.away_team_id, at.name AS away_team,
                hp.full_name AS home_probable_pitcher, g.home_probable_pitcher_id,
                ap.full_name AS away_probable_pitcher, g.away_probable_pitcher_id,
+               g.home_lineup, g.away_lineup,
                v.id AS venue_id, v.name AS venue_name, v.azimuth_angle AS venue_azimuth_angle,
                v.roof_type AS venue_roof_type, v.hr_factor AS venue_hr_factor,
                v.hit_factor AS venue_hit_factor,
@@ -160,6 +162,13 @@ def games():
         """,
         (game_date,),
     )
+
+    # home_lineup/away_lineup are stored as JSON text (see db.upsert_game);
+    # decode to real arrays here so the front end gets actual lineup data,
+    # not a string to parse itself. NULL (not announced yet) becomes [].
+    for r in rows:
+        r["home_lineup"] = json.loads(r["home_lineup"]) if r["home_lineup"] else []
+        r["away_lineup"] = json.loads(r["away_lineup"]) if r["away_lineup"] else []
 
     # Bullpen fatigue, one grade per team -- computed once per unique team
     # on the slate (not once per game row) and cached for this request,

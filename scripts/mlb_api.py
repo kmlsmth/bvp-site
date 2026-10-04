@@ -16,12 +16,18 @@ TIMEOUT = 15
 
 
 def get_schedule(date: str, sport_id: int = 1) -> dict:
-    """Games on a given date (YYYY-MM-DD), with probable pitchers attached."""
+    """Games on a given date (YYYY-MM-DD), with probable pitchers, venue,
+    and (once MLB posts them -- usually 1-3 hours before first pitch) each
+    team's starting lineup attached. Since this one call already runs both
+    once a day and every hour (see ingest_daily.refresh_probable_pitchers),
+    adding "lineups" here means the lineup gets picked up on that same
+    existing cadence for free, the same way a late-announced probable
+    pitcher does -- no separate polling needed."""
     url = f"{BASE_URL}/schedule"
     params = {
         "sportId": sport_id,
         "date": date,
-        "hydrate": "probablePitcher,team,venue",
+        "hydrate": "probablePitcher,team,venue,lineups",
     }
     resp = requests.get(url, params=params, timeout=TIMEOUT)
     resp.raise_for_status()

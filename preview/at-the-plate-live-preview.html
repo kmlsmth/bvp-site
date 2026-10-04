@@ -1,20 +1,13 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>At the Plate</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
-  /* Layout: homepage list of a day's games -> a game page with a weather
-     card and a batter-vs-pitcher stat table. A "viewing lineup vs." dropdown
-     at the top of the table lists every probable starter in that day's
-     full slate, not just this game's two -- picking one jumps straight to
-     that pitcher's own game page. The lineup table shows the full stat
-     line (matching the old dailybaseballdata.com column set) in a
-     horizontally-scrolling table, with a team-totals row at the bottom. */
+  /* This is the real app's own code (same CSS, same JS), just reading from
+     a small bundle of sample data below instead of calling the live API,
+     since this preview has no way to reach Kamil's private Railway
+     database. Everything you can click here behaves exactly like the
+     deployed site will. */
   :root {
     --bg: #f6f3ea; --surface: #ffffff; --surface-2: #efebdf;
     --ink: #1b2018; --muted: #666f63; --line: #dedacb;
@@ -41,8 +34,11 @@
   }
 
   * { box-sizing: border-box; }
-  html, body { margin: 0; }
-  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); margin: 0; }
+  .preview-banner {
+    background: var(--accent-soft); color: var(--ink); font-family: var(--font-mono);
+    font-size: 12px; text-align: center; padding: 10px 16px;
+  }
   .wrap { max-width: 900px; margin: 0 auto; padding: 28px 16px 64px; display: flex; flex-direction: column; gap: 20px; }
 
   .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
@@ -50,7 +46,6 @@
   .sub { color: var(--muted); font-size: 14.5px; max-width: 60ch; }
   .loading { font-size: 13px; color: var(--muted); font-family: var(--font-mono); padding: 4px 0; }
 
-  /* ---- Home: list of games ---- */
   .game-row {
     display: flex; align-items: center; justify-content: space-between; gap: 14px;
     background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
@@ -64,42 +59,12 @@
   .game-row .chev { flex-shrink: 0; width: 18px; height: 18px; color: var(--muted); transform: rotate(-90deg); }
   .games-list { display: flex; flex-direction: column; gap: 10px; }
 
-  /* ---- Bullpen fatigue badges (schedule list + game page) ---- */
-  .bullpen-badges { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
-  .bp-badge { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 5px; }
-  .bp-badge .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .bp-fresh .dot { background: var(--accent); }
-  .bp-moderate .dot { background: var(--muted); }
-  .bp-taxed .dot { background: var(--stitch); opacity: 0.7; }
-  .bp-exhausted .dot { background: var(--stitch); }
-  .bp-fresh, .bp-moderate { color: var(--muted); }
-  .bp-taxed, .bp-exhausted { color: var(--stitch); }
-
-  /* ---- Bullpen Watch card (game page) ---- */
-  .bullpen-cards { display: flex; flex-direction: column; gap: 10px; }
-  .bullpen-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-  .bullpen-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; cursor: pointer; }
-  .bullpen-card-head:hover { background: var(--surface-2); }
-  .bullpen-team-name { font-family: var(--font-display); font-size: 15.5px; font-weight: 600; }
-  .bullpen-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .bullpen-card-body { border-top: 1px solid var(--line); padding: 10px 16px 14px; display: none; }
-  .bullpen-card.expanded .bullpen-card-body { display: block; }
-  .bullpen-card-body table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .bullpen-card-body th { text-align: right; font-size: 10px; text-transform: uppercase; color: var(--muted); padding: 4px 6px; font-weight: 600; }
-  .bullpen-card-body th:first-child, .bullpen-card-body td:first-child { text-align: left; }
-  .bullpen-card-body td { text-align: right; padding: 4px 6px; font-family: var(--font-mono); }
-  .bullpen-card-body td:first-child { font-family: var(--font-body); }
-  .bullpen-card-chev { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; transition: transform 0.15s; }
-  .bullpen-card.expanded .bullpen-card-chev { transform: rotate(180deg); }
-  .recent-form-note { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
-
   .empty-day { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; }
   .date-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .date-row input[type="date"] { font-family: var(--font-mono); font-size: 14px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 10px; }
   .today-btn { font-family: var(--font-body); font-size: 13px; font-weight: 500; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
   .today-btn:hover { border-color: var(--accent); }
 
-  /* ---- Game page ---- */
   .back-link {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 13px; font-weight: 500; color: var(--muted);
@@ -112,7 +77,6 @@
   .section-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 4px 2px -4px; }
   .tabs-note { font-size: 12px; color: var(--muted); font-style: italic; }
 
-  /* ---- BVP tab: pitcher switcher + full stat table ---- */
   .pitcher-switch {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
@@ -158,7 +122,6 @@
 
   .no-history-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 2px 2px; }
 
-  /* ---- Weather: lives right on the matchup page, field-relative arrow ---- */
   .weather-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
   .field-diagram { width: 128px; height: 112px; flex-shrink: 0; }
   .field-diagram .foul-line { stroke: var(--line); stroke-width: 1.5; fill: none; }
@@ -180,24 +143,64 @@
     .wx-tiles { margin-left: 0; width: 100%; justify-content: space-between; }
   }
 </style>
-</head>
-<body>
+
+<div class="preview-banner">Preview with sample data, built from the real app's own code — the live site will show your actual games</div>
 <div class="wrap" id="app"></div>
 
 <script>
 (function () {
   "use strict";
 
-  var app = document.getElementById("app");
-  var gamesCache = {};           // date (YYYY-MM-DD) -> Promise of games array
-  var currentDate = todayISO();
+  // ---- Sample data, standing in for the live API this one call away. ----
+  // Shapes match exactly what /api/games and /api/lineup really return.
+  var GAMES_BY_DATE = {
+    "2026-09-25": [
+      {
+        game_pk: 824706, game_date_time: "2026-09-25T21:35:00Z", status: "Final",
+        home_team_id: 111, home_team: "Boston Red Sox", away_team_id: 112, away_team: "Chicago Cubs",
+        home_probable_pitcher_id: 678394, home_probable_pitcher: "Brayan Bello",
+        away_probable_pitcher_id: 656849, away_probable_pitcher: "David Peterson",
+        venue_id: 3, venue_name: "Fenway Park", venue_azimuth_angle: 45.0, venue_roof_type: "Open",
+        wind_speed_mph: 9, wind_dir_deg: 225.0, wind_dir_compass: "SW", temp_f: 68, sky: "Partly cloudy",
+        forecast_time: "2026-09-25T21:00"
+      },
+      {
+        game_pk: 823085, game_date_time: "2026-09-26T02:10:00Z", status: "Final",
+        home_team_id: 136, home_team: "Seattle Mariners", away_team_id: 108, away_team: "Los Angeles Angels",
+        home_probable_pitcher_id: 682243, home_probable_pitcher: "Bryce Miller",
+        away_probable_pitcher_id: 672282, away_probable_pitcher: "Reid Detmers",
+        venue_id: 680, venue_name: "T-Mobile Park", venue_azimuth_angle: 49.0, venue_roof_type: "Retractable",
+        wind_speed_mph: 14, wind_dir_deg: 45.0, wind_dir_compass: "NE", temp_f: 61, sky: "Clear",
+        forecast_time: "2026-09-26T02:00"
+      },
+      {
+        game_pk: 824999, game_date_time: "2026-09-26T00:40:00Z", status: "Preview",
+        home_team_id: 135, home_team: "San Diego Padres", away_team_id: 109, away_team: "Arizona Diamondbacks",
+        home_probable_pitcher_id: null, home_probable_pitcher: null,
+        away_probable_pitcher_id: null, away_probable_pitcher: null,
+        venue_id: 2680, venue_name: "Petco Park", venue_azimuth_angle: null, venue_roof_type: "Open",
+        wind_speed_mph: null, wind_dir_deg: null, wind_dir_compass: null, temp_f: null, sky: null,
+        forecast_time: null
+      }
+    ]
+  };
 
-  function todayISO() {
-    var d = new Date();
-    var m = String(d.getMonth() + 1).padStart(2, "0");
-    var day = String(d.getDate()).padStart(2, "0");
-    return d.getFullYear() + "-" + m + "-" + day;
+  var LINEUPS = {"656849": {"pitcher": {"id": 656849, "name": "David Peterson"}, "opponent_team": {"id": 111, "name": "Boston Red Sox"}, "rows": [{"id": 650859, "name": "Trevor Story", "stats": {"np": 19, "pa": 4, "ab": 4, "h": 0, "d2": 0, "d3": 0, "hr": 0, "r": 0, "rbi": 0, "bb": 0, "so": 2, "sb": 0, "cs": 0, "avg": ".000", "obp": ".000", "slg": ".000", "ops": ".000", "woba": ".000", "ops_num": 0.0}, "seasons": []}, {"id": 677649, "name": "Jarren Duran", "stats": {"np": 14, "pa": 3, "ab": 3, "h": 1, "d2": 0, "d3": 0, "hr": 0, "r": 1, "rbi": 0, "bb": 0, "so": 1, "sb": 0, "cs": 0, "avg": ".333", "obp": ".333", "slg": ".333", "ops": ".667", "woba": ".296", "ops_num": 0.6666666666666666}, "seasons": []}], "no_history": [{"id": 807799, "name": "Roman Anthony"}, {"id": 666971, "name": "Rafael Devers"}, {"id": 668942, "name": "Wilyer Abreu"}], "team_totals": {"np": 33, "pa": 7, "ab": 7, "h": 1, "d2": 0, "d3": 0, "hr": 0, "r": 1, "rbi": 0, "bb": 0, "so": 3, "sb": 0, "cs": 0, "avg": ".143", "obp": ".143", "slg": ".143", "ops": ".286", "woba": ".127", "ops_num": 0.2857142857142857}}, "678394": {"pitcher": {"id": 678394, "name": "Brayan Bello"}, "opponent_team": {"id": 112, "name": "Chicago Cubs"}, "rows": [{"id": 672275, "name": "Ian Happ", "stats": {"np": 30, "pa": 9, "ab": 8, "h": 2, "d2": 0, "d3": 0, "hr": 0, "r": 1, "rbi": 1, "bb": 1, "so": 3, "sb": 1, "cs": 0, "avg": ".250", "obp": ".333", "slg": ".250", "ops": ".583", "woba": ".274", "ops_num": 0.5833333333333333}, "seasons": []}, {"id": 663656, "name": "Kyle Tucker", "stats": {"np": 22, "pa": 5, "ab": 5, "h": 2, "d2": 1, "d3": 0, "hr": 1, "r": 3, "rbi": 4, "bb": 0, "so": 1, "sb": 0, "cs": 0, "avg": ".400", "obp": ".400", "slg": "1.200", "ops": "1.600", "woba": ".674", "ops_num": 1.6}, "seasons": []}], "no_history": [{"id": 641355, "name": "Dansby Swanson"}, {"id": 683737, "name": "Pete Crow-Armstrong"}, {"id": 666160, "name": "Michael Busch"}], "team_totals": {"np": 52, "pa": 14, "ab": 13, "h": 4, "d2": 1, "d3": 0, "hr": 1, "r": 4, "rbi": 5, "bb": 1, "so": 4, "sb": 1, "cs": 0, "avg": ".308", "obp": ".357", "slg": ".615", "ops": ".973", "woba": ".417", "ops_num": 0.9725274725274726}}, "672282": {"pitcher": {"id": 672282, "name": "Reid Detmers"}, "opponent_team": {"id": 136, "name": "Seattle Mariners"}, "rows": [{"id": 663728, "name": "Cal Raleigh", "stats": {"np": 86, "pa": 18, "ab": 18, "h": 3, "d2": 0, "d3": 0, "hr": 2, "r": 4, "rbi": 6, "bb": 0, "so": 7, "sb": 0, "cs": 0, "avg": ".167", "obp": ".167", "slg": ".500", "ops": ".667", "woba": ".283", "ops_num": 0.6666666666666666}, "seasons": [{"season": "2021", "opponent_name": "Los Angeles Angels", "np": 8, "pa": 1, "ab": 1, "h": 0, "d2": 0, "d3": 0, "hr": 0, "r": 0, "rbi": 0, "bb": 0, "so": 0, "sb": 0, "cs": 0, "avg": ".000", "obp": ".000", "slg": ".000", "ops": ".000", "woba": ".000", "ops_num": 0.0}, {"season": "2023", "opponent_name": "Los Angeles Angels", "np": 22, "pa": 5, "ab": 5, "h": 1, "d2": 0, "d3": 0, "hr": 1, "r": 1, "rbi": 2, "bb": 0, "so": 1, "sb": 0, "cs": 0, "avg": ".200", "obp": ".200", "slg": ".800", "ops": "1.000", "woba": ".420", "ops_num": 1.0}, {"season": "2024", "opponent_name": "Los Angeles Angels", "np": 7, "pa": 2, "ab": 2, "h": 0, "d2": 0, "d3": 0, "hr": 0, "r": 0, "rbi": 0, "bb": 0, "so": 0, "sb": 0, "cs": 0, "avg": ".000", "obp": ".000", "slg": ".000", "ops": ".000", "woba": ".000", "ops_num": 0.0}, {"season": "2025", "opponent_name": "Los Angeles Angels", "np": 18, "pa": 4, "ab": 4, "h": 1, "d2": 0, "d3": 0, "hr": 0, "r": 1, "rbi": 1, "bb": 0, "so": 3, "sb": 0, "cs": 0, "avg": ".250", "obp": ".250", "slg": ".250", "ops": ".500", "woba": ".222", "ops_num": 0.5}, {"season": "2026", "opponent_name": "Los Angeles Angels", "np": 31, "pa": 6, "ab": 6, "h": 1, "d2": 0, "d3": 0, "hr": 1, "r": 2, "rbi": 3, "bb": 0, "so": 3, "sb": 0, "cs": 0, "avg": ".167", "obp": ".167", "slg": ".667", "ops": ".833", "woba": ".350", "ops_num": 0.8333333333333333}]}, {"id": 650333, "name": "Randy Arozarena", "stats": {"np": 28, "pa": 7, "ab": 7, "h": 2, "d2": 1, "d3": 0, "hr": 0, "r": 1, "rbi": 1, "bb": 0, "so": 2, "sb": 1, "cs": 0, "avg": ".286", "obp": ".286", "slg": ".429", "ops": ".714", "woba": ".308", "ops_num": 0.7142857142857142}, "seasons": []}], "no_history": [{"id": 677594, "name": "Julio Rodr\u00edguez"}, {"id": 673962, "name": "Jorge Polanco"}], "team_totals": {"np": 114, "pa": 25, "ab": 25, "h": 5, "d2": 1, "d3": 0, "hr": 2, "r": 5, "rbi": 7, "bb": 0, "so": 9, "sb": 1, "cs": 0, "avg": ".200", "obp": ".200", "slg": ".480", "ops": ".680", "woba": ".290", "ops_num": 0.6799999999999999}}, "682243": {"pitcher": {"id": 682243, "name": "Bryce Miller"}, "opponent_team": {"id": 108, "name": "Los Angeles Angels"}, "rows": [{"id": 672275, "name": "Taylor Ward", "stats": {"np": 24, "pa": 6, "ab": 6, "h": 1, "d2": 0, "d3": 0, "hr": 0, "r": 0, "rbi": 0, "bb": 0, "so": 2, "sb": 0, "cs": 0, "avg": ".167", "obp": ".167", "slg": ".167", "ops": ".333", "woba": ".148", "ops_num": 0.3333333333333333}, "seasons": []}, {"id": 608369, "name": "Mike Trout", "stats": {"np": 9, "pa": 2, "ab": 2, "h": 1, "d2": 0, "d3": 0, "hr": 1, "r": 1, "rbi": 2, "bb": 0, "so": 0, "sb": 0, "cs": 0, "avg": ".500", "obp": ".500", "slg": "2.000", "ops": "2.500", "woba": "1.050", "ops_num": 2.5}, "seasons": []}], "no_history": [{"id": 700363, "name": "Zach Neto"}, {"id": 681351, "name": "Nolan Schanuel"}], "team_totals": {"np": 33, "pa": 8, "ab": 8, "h": 2, "d2": 0, "d3": 0, "hr": 1, "r": 1, "rbi": 2, "bb": 0, "so": 2, "sb": 0, "cs": 0, "avg": ".250", "obp": ".250", "slg": ".625", "ops": ".875", "woba": ".374", "ops_num": 0.875}}};
+
+  function mockFetchGames(date) {
+    return new Promise(function (resolve) { setTimeout(function () { resolve(GAMES_BY_DATE[date] || []); }, 180); });
   }
+  function mockFetchLineup(pitcherId) {
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        resolve(LINEUPS[pitcherId] || { rows: [], no_history: [], team_totals: {} });
+      }, 220);
+    });
+  }
+
+  var app = document.getElementById("app");
+  var gamesCache = {};
+  var currentDate = "2026-09-25";
 
   function el(html) {
     var wrapper = document.createElement("div");
@@ -217,52 +220,14 @@
     return (v === null || v === undefined) ? "–" : v;
   }
 
-  // ---- API calls ----
   function fetchGames(date) {
-    if (!gamesCache[date]) {
-      gamesCache[date] = fetch("/api/games?date=" + encodeURIComponent(date))
-        .then(function (r) { if (!r.ok) throw new Error("games request failed"); return r.json(); })
-        .catch(function (err) { delete gamesCache[date]; throw err; });
-    }
+    if (!gamesCache[date]) gamesCache[date] = mockFetchGames(date);
     return gamesCache[date];
   }
-
   function fetchLineup(pitcherId, opponentTeamId) {
-    return fetch("/api/lineup?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId)
-      .then(function (r) { if (!r.ok) throw new Error("lineup request failed"); return r.json(); });
+    return mockFetchLineup(pitcherId, opponentTeamId);
   }
 
-  function fetchBullpen(teamId, date) {
-    return fetch("/api/bullpen?team=" + teamId + "&date=" + encodeURIComponent(date))
-      .then(function (r) { if (!r.ok) throw new Error("bullpen request failed"); return r.json(); });
-  }
-
-  // ---- Bullpen fatigue display helpers ----
-  function fatigueClass(label) {
-    return "bp-" + String(label || "fresh").toLowerCase();
-  }
-
-  function bullpenBadgesHtml(g) {
-    var parts = [];
-    [["away", g.away_team, g.away_bullpen_fatigue], ["home", g.home_team, g.home_bullpen_fatigue]].forEach(function (t) {
-      var fatigue = t[2];
-      if (!fatigue) return;
-      parts.push(
-        '<span class="bp-badge ' + fatigueClass(fatigue.label) + '"><span class="dot"></span>' +
-        escapeHtml(t[1]) + ' bullpen: ' + escapeHtml(fatigue.label) + '</span>'
-      );
-    });
-    return parts.length ? '<div class="bullpen-badges">' + parts.join("") + '</div>' : "";
-  }
-
-  function recentFormText(form) {
-    if (!form || !form.starts_counted) return "";
-    return '<span class="recent-form-note">Last ' + form.starts_counted +
-      ' start' + (form.starts_counted === 1 ? "" : "s") + ': ' +
-      form.era + ' ERA &middot; ' + form.whip + ' WHIP &middot; ' + form.k9 + ' K/9</span>';
-  }
-
-  // ---- Routing: "#/" = home, "#/game/<date>/<gamePk>/<pitcherId?>" = game page ----
   function route() {
     var hash = location.hash.replace(/^#\/?/, "");
     var parts = hash.split("/").filter(Boolean);
@@ -275,7 +240,6 @@
   }
   window.addEventListener("hashchange", route);
 
-  // ---- Home view ----
   function renderHome() {
     app.innerHTML = "";
     var header = el(
@@ -285,7 +249,7 @@
         '<p class="sub">Pick a game to see the batter-vs-pitcher breakdown and game-time wind conditions.</p>' +
         '<div class="date-row">' +
           '<input type="date" id="date-input" value="' + currentDate + '">' +
-          '<button class="today-btn" id="today-btn" type="button">Today</button>' +
+          '<button class="today-btn" id="today-btn" type="button">Sample date</button>' +
         '</div>' +
       '</header>'
     );
@@ -298,7 +262,7 @@
       loadGamesInto(listHost);
     });
     document.getElementById("today-btn").addEventListener("click", function () {
-      currentDate = todayISO();
+      currentDate = "2026-09-25";
       document.getElementById("date-input").value = currentDate;
       loadGamesInto(listHost);
     });
@@ -320,7 +284,7 @@
     fetchGames(currentDate).then(function (games) {
       host.innerHTML = "";
       if (!games.length) {
-        host.appendChild(el('<div class="empty-day">No games on this date.</div>'));
+        host.appendChild(el('<div class="empty-day">No games on this date — try September 25, 2026 to see a full sample slate.</div>'));
         return;
       }
       games.slice().sort(function (a, b) {
@@ -331,7 +295,6 @@
             '<div>' +
               '<div class="matchup-name">' + escapeHtml(g.away_team) + '<span class="at">at</span>' + escapeHtml(g.home_team) + '</div>' +
               '<div class="pitchers-line">' + pitchersLineText(g) + ' &middot; ' + escapeHtml(g.venue_name || "Venue TBD") + '</div>' +
-              bullpenBadgesHtml(g) +
             '</div>' +
             '<svg class="chev" viewBox="0 0 20 20" fill="none"><path d="M5 7.5 10 13 15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
           '</button>'
@@ -342,12 +305,9 @@
         });
         host.appendChild(row);
       });
-    }).catch(function () {
-      host.innerHTML = '<div class="empty-day">Couldn’t load games right now. Try reloading the page.</div>';
     });
   }
 
-  // ---- Game view ----
   function allPitchersForDate(games) {
     var list = [];
     games.forEach(function (g) {
@@ -378,8 +338,6 @@
       var pitchers = allPitchersForDate(games);
       var startPitcherId = pitcherId || game.away_probable_pitcher_id || game.home_probable_pitcher_id || null;
       renderGame(game, pitchers, startPitcherId);
-    }).catch(function () {
-      app.innerHTML = '<div class="empty-day">Couldn’t load this game right now. Try reloading the page.</div>';
     });
   }
 
@@ -406,63 +364,7 @@
       app.appendChild(renderBvpSection(game, pitchers, startPitcherId));
     }
 
-    app.appendChild(el('<div class="section-label">Bullpen Watch</div>'));
-    app.appendChild(renderBullpenSection(game));
-
-    app.appendChild(el('<p class="tabs-note">More planned here — lineup confirmations and market data.</p>'));
-  }
-
-  function fatigueSummaryText(fatigue) {
-    if (!fatigue) return "Loading&hellip;";
-    return fatigue.label + ' &middot; ' + fatigue.weekly_pitches + ' pitches over the last ' + BULLPEN_WINDOW_DAYS + ' days' +
-      ' &middot; ' + fatigue.relievers_used + ' reliever' + (fatigue.relievers_used === 1 ? "" : "s") + ' used';
-  }
-
-  var BULLPEN_WINDOW_DAYS = 7;
-
-  function renderBullpenSection(game) {
-    var wrap = el('<div class="bullpen-cards"></div>');
-
-    [
-      { teamId: game.away_team_id, teamName: game.away_team },
-      { teamId: game.home_team_id, teamName: game.home_team }
-    ].forEach(function (t) {
-      if (!t.teamId) return;
-      var card = el(
-        '<div class="bullpen-card">' +
-          '<div class="bullpen-card-head">' +
-            '<div><div class="bullpen-team-name">' + escapeHtml(t.teamName) + '</div>' +
-            '<div class="bullpen-meta">Loading&hellip;</div></div>' +
-            '<svg class="bullpen-card-chev" viewBox="0 0 20 20" fill="none"><path d="M5 7.5 10 13 15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-          '</div>' +
-          '<div class="bullpen-card-body"><div class="loading">Loading relievers&hellip;</div></div>' +
-        '</div>'
-      );
-      var head = card.querySelector(".bullpen-card-head");
-      var meta = card.querySelector(".bullpen-meta");
-      var body = card.querySelector(".bullpen-card-body");
-      head.addEventListener("click", function () { card.classList.toggle("expanded"); });
-
-      fetchBullpen(t.teamId, currentDate).then(function (data) {
-        meta.innerHTML = fatigueSummaryText(data.fatigue);
-        if (!data.relievers || !data.relievers.length) {
-          body.innerHTML = '<div class="no-history-note">No reliever appearances recorded in the last ' + BULLPEN_WINDOW_DAYS + ' days.</div>';
-          return;
-        }
-        var rows = data.relievers.map(function (p) {
-          return '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p.appearances + '</td><td>' + p.pitches + '</td><td>' + escapeHtml(p.last_appearance || "–") + '</td></tr>';
-        }).join("");
-        body.innerHTML =
-          '<table><thead><tr><th>Pitcher</th><th>Apps</th><th>Pitches</th><th>Last outing</th></tr></thead><tbody>' + rows + '</tbody></table>';
-      }).catch(function () {
-        meta.innerHTML = "Couldn’t load bullpen data.";
-        body.innerHTML = '<div class="empty-day">Couldn’t load reliever data right now.</div>';
-      });
-
-      wrap.appendChild(card);
-    });
-
-    return wrap;
+    app.appendChild(el('<p class="tabs-note">More sections planned here — bullpen and prediction breakdowns.</p>'));
   }
 
   function renderBvpSection(game, pitchers, startPitcherId) {
@@ -491,8 +393,6 @@
       var entry = pitchers.filter(function (p) { return p.id === pitcherId; })[0];
       if (!entry) return;
       if (entry.gamePk !== game.game_pk) {
-        // This pitcher is in a different game today -- jump there so the
-        // header/venue/weather all match what's actually being shown.
         location.hash = "#/game/" + currentDate + "/" + entry.gamePk + "/" + entry.id;
         return;
       }
@@ -501,11 +401,6 @@
       fetchLineup(entry.id, entry.oppId).then(function (data) {
         tableHost.innerHTML = "";
         tableHost.appendChild(buildLineupTable(data));
-        if (data.pitcher && data.pitcher.recent_form) {
-          captionHost.innerHTML += recentFormText(data.pitcher.recent_form);
-        }
-      }).catch(function () {
-        tableHost.innerHTML = '<div class="empty-day">Couldn’t load this lineup right now.</div>';
       });
     }
     select.addEventListener("change", function () { loadPitcher(parseInt(select.value, 10)); });
@@ -528,7 +423,7 @@
     table.innerHTML = "<thead><tr><th>Batter</th>" + COLS.map(function (c) { return "<th>" + c[0] + "</th>"; }).join("") + "</tr></thead>";
     var tbody = document.createElement("tbody");
 
-    data.rows.forEach(function (b) {
+    (data.rows || []).forEach(function (b) {
       var tr = document.createElement("tr");
       var cells = COLS.map(function (c) {
         var cls = c[1] === "ops" ? "ops-cell " + (b.stats.ops_num >= 0.85 ? "hot" : b.stats.ops_num <= 0.5 ? "cold" : "")
@@ -555,7 +450,7 @@
     var wrap = document.createElement("div");
     wrap.style.display = "flex"; wrap.style.flexDirection = "column"; wrap.style.gap = "8px";
     wrap.appendChild(scroll);
-    if (!data.rows.length) {
+    if (!data.rows || !data.rows.length) {
       wrap.appendChild(el('<div class="no-history-note">No roster data yet for this matchup — check back closer to game time.</div>'));
     } else if (data.no_history && data.no_history.length) {
       wrap.appendChild(el('<div class="no-history-note">No recorded at-bats yet: ' + data.no_history.map(function (b) { return escapeHtml(b.name); }).join(", ") + '</div>'));
@@ -586,14 +481,6 @@
     tr.parentNode.insertBefore(row, tr.nextSibling);
   }
 
-  // ---- Weather: wind drawn relative to the park's own layout ----
-  // wind_dir_deg is the meteorological "wind FROM" bearing (true compass).
-  // Flip it 180deg to get where the wind is blowing TOWARD, then subtract
-  // the park's own center-field bearing (venue_azimuth_angle) so 0deg =
-  // straight out to dead center, 90deg = toward right field, 180deg =
-  // blowing straight back in from center, 270deg = toward left field --
-  // regardless of true compass direction, which nobody standing in the
-  // batter's box cares about.
   function relativeWindDeg(game) {
     var toward = (game.wind_dir_deg + 180) % 360;
     return (toward - game.venue_azimuth_angle + 360) % 360;
@@ -617,9 +504,6 @@
 
   function formatForecastTime(iso) {
     if (!iso) return null;
-    // Stored in UTC with no offset suffix (e.g. "2026-10-02T21:00") --
-    // append Z so the browser parses it as UTC, then show it in the
-    // viewer's own local time.
     var d = new Date(iso + "Z");
     if (isNaN(d.getTime())) return null;
     return d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
@@ -631,18 +515,12 @@
       game.wind_dir_deg !== null && game.wind_dir_deg !== undefined &&
       game.venue_azimuth_angle !== null && game.venue_azimuth_angle !== undefined;
 
-    var hasParkFactor = game.venue_hr_factor !== null && game.venue_hr_factor !== undefined;
-    var parkFactorTile = hasParkFactor ?
-      '<div class="wx-tile"><div class="v">' + game.venue_hr_factor + '</div><div class="k">HR factor</div></div>' : "";
-
     if (!hasWeather) {
       wrap.appendChild(el(
         '<div class="weather-card"><div class="wx-readout">' +
           '<div class="wx-headline">Wind data not available yet</div>' +
           '<div class="wx-raw">Check back closer to game time.</div>' +
-        '</div>' +
-        (parkFactorTile ? '<div class="wx-tiles">' + parkFactorTile + '</div>' : "") +
-        '</div>'
+        '</div></div>'
       ));
       return wrap;
     }
@@ -651,11 +529,6 @@
     var speed = game.wind_speed_mph;
     var calm = speed < 4;
 
-    // Field diagram: home plate fixed at bottom, center field always "up" --
-    // the diagram itself is oriented to the park, so the arrow's rotation
-    // alone shows where the wind is headed relative to the field. The
-    // arrow is centered on a fixed mid-field point (not anchored to home
-    // plate) so it never runs off the diagram at any angle.
     var acx = 64, acy = 56, half = 34;
     var a = rel * Math.PI / 180;
     var dx = Math.sin(a), dy = -Math.cos(a);
@@ -688,7 +561,6 @@
         '<div class="wx-tiles">' +
           '<div class="wx-tile"><div class="v">' + (game.temp_f !== null && game.temp_f !== undefined ? Math.round(game.temp_f) + '&deg;' : '–') + '</div><div class="k">Temp</div></div>' +
           '<div class="wx-tile"><div class="v" style="font-size:13px">' + escapeHtml(game.sky || '–') + '</div><div class="k">Sky</div></div>' +
-          parkFactorTile +
         '</div>' +
       '</div>'
     ));
@@ -701,5 +573,3 @@
   route();
 })();
 </script>
-</body>
-</html>

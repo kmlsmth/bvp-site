@@ -1,0 +1,539 @@
+<title>Batter vs. Pitcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout concept: homepage list of today's games -> a game page with
+     tabs (Batter vs. Pitcher / Weather). A "jump to pitcher" dropdown at
+     the top of the BVP tab lists every probable starter in today's full
+     slate, not just this game's two -- picking one jumps straight to
+     that pitcher's own game. The lineup table shows the full stat line
+     (matching the old site's column set) in a horizontally-scrolling
+     table, with a team-totals row at the bottom. */
+  :root {
+    --bg: #f6f3ea; --surface: #ffffff; --surface-2: #efebdf;
+    --ink: #1b2018; --muted: #666f63; --line: #dedacb;
+    --accent: #2f6f4f; --accent-ink: #ffffff; --accent-soft: #e4efe7;
+    --stitch: #a8393a;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14170f; --surface: #1c2016; --surface-2: #232819;
+      --ink: #eef0e7; --muted: #9aa392; --line: #333a28;
+      --accent: #5fa47c; --accent-ink: #0c140f; --accent-soft: #1f2e22;
+      --stitch: #d4716b; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14170f; --surface: #1c2016; --surface-2: #232819;
+    --ink: #eef0e7; --muted: #9aa392; --line: #333a28;
+    --accent: #5fa47c; --accent-ink: #0c140f; --accent-soft: #1f2e22;
+    --stitch: #d4716b; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 28px 16px 64px; display: flex; flex-direction: column; gap: 20px; }
+
+  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: var(--font-display); font-weight: 600; font-size: 32px; line-height: 1.08; margin: 0; text-wrap: balance; }
+  .sub { color: var(--muted); font-size: 14.5px; max-width: 60ch; }
+  .demo-note { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--accent); padding-left: 10px; }
+  .loading { font-size: 13px; color: var(--muted); font-family: var(--font-mono); padding: 4px 0; }
+
+  /* ---- Home: list of games ---- */
+  .game-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 18px; cursor: pointer; text-align: left; width: 100%;
+    font-family: inherit; color: inherit;
+  }
+  .game-row:hover { border-color: var(--accent); }
+  .game-row .matchup-name { font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+  .game-row .matchup-name .at { color: var(--muted); font-style: italic; font-weight: 500; padding: 0 4px; }
+  .game-row .pitchers-line { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .game-row .chev { flex-shrink: 0; width: 18px; height: 18px; color: var(--muted); transform: rotate(-90deg); }
+  .games-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .empty-day { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+  .date-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .date-row input[type="date"] { font-family: var(--font-mono); font-size: 14px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 10px; }
+  .today-btn { font-family: var(--font-body); font-size: 13px; font-weight: 500; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  .today-btn:hover { border-color: var(--accent); }
+
+  /* ---- Game page ---- */
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500; color: var(--muted);
+    background: none; border: none; cursor: pointer; padding: 0; font-family: inherit;
+    align-self: flex-start;
+  }
+  .back-link:hover { color: var(--accent); }
+  .game-header .pitchers-line { font-size: 13.5px; color: var(--muted); }
+
+  .tab-bar { display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+  .tab-btn {
+    font-family: var(--font-body); font-size: 14px; font-weight: 500; color: var(--muted);
+    background: none; border: none; padding: 10px 4px; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-btn[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .tab-btn:hover { color: var(--ink); }
+  .tabs-note { font-size: 12px; color: var(--muted); font-style: italic; }
+
+  /* ---- BVP tab: pitcher switcher + full stat table ---- */
+  .pitcher-switch {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .pitcher-switch label { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  .pitcher-switch select {
+    flex: 1; min-width: 200px;
+    font-family: var(--font-body); font-size: 14.5px; font-weight: 500; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .lineup-caption { font-size: 13px; color: var(--muted); margin: 2px 2px 0; }
+  .lineup-caption strong { color: var(--ink); }
+
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  table.lineup { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 860px; }
+  table.lineup thead th {
+    text-align: right; font-size: 10px; letter-spacing: 0.03em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding: 8px 9px; border-bottom: 1px solid var(--line);
+    background: var(--surface-2); position: sticky; top: 0;
+  }
+  table.lineup thead th:first-child { text-align: left; position: sticky; left: 0; z-index: 1; }
+  table.lineup tbody td {
+    text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    padding: 9px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface);
+  }
+  table.lineup tbody td:first-child {
+    font-family: var(--font-body); white-space: normal; text-align: left;
+    position: sticky; left: 0; background: var(--surface);
+  }
+  table.lineup tbody tr:nth-child(even) td { background: var(--surface-2); }
+  table.lineup tbody tr:nth-child(even) td:first-child { background: var(--surface-2); }
+  table.lineup tbody tr:last-child td { border-bottom: none; }
+  table.lineup .ops-cell, table.lineup .woba-cell { font-weight: 600; }
+  table.lineup .hot { color: var(--accent); }
+  table.lineup .cold { color: var(--stitch); }
+  table.lineup tfoot td {
+    font-weight: 600; padding: 10px 9px; border-top: 2px solid var(--line);
+    background: var(--accent-soft); font-family: var(--font-mono); text-align: right;
+  }
+  table.lineup tfoot td:first-child { text-align: left; font-family: var(--font-body); position: sticky; left: 0; background: var(--accent-soft); }
+
+  .no-history-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 2px 2px; }
+
+  /* ---- Weather: lives right on the matchup page, field-relative arrow ---- */
+  .weather-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .field-diagram { width: 128px; height: 112px; flex-shrink: 0; }
+  .field-diagram .foul-line { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .field-diagram .arc { stroke: var(--line); stroke-width: 1.5; fill: none; stroke-dasharray: 2 3; }
+  .field-diagram .field-label { font-family: var(--font-mono); font-size: 9px; fill: var(--muted); text-anchor: middle; letter-spacing: 0.03em; }
+  .field-diagram .plate { fill: var(--muted); }
+  .field-diagram .wind-arrow { fill: var(--accent); }
+  .field-diagram .wind-arrow.calm { fill: var(--muted); }
+  .wx-readout { display: flex; flex-direction: column; gap: 3px; min-width: 180px; }
+  .wx-headline { font-family: var(--font-display); font-size: 16.5px; font-weight: 600; line-height: 1.25; }
+  .wx-raw { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
+  .wx-tiles { display: flex; gap: 16px; margin-left: auto; }
+  .wx-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .wx-tile .v { font-family: var(--font-mono); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .wx-tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .wx-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .wx-foot a { color: var(--accent); text-decoration: none; }
+  .section-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 4px 2px -4px; }
+
+  @media (max-width: 420px) {
+    h1 { font-size: 26px; }
+    .wx-tiles { margin-left: 0; width: 100%; justify-content: space-between; }
+  }
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script>
+(function () {
+  // ---- Mock data ----
+  // Raw countable stats per batter; rate stats (AVG/OBP/SLG/OPS/wOBA) are
+  // computed from these, the same way the real API will -- MLB's API gives
+  // us AVG/OBP/SLG/OPS directly, but wOBA isn't one of their fields, so
+  // it's derived here from the raw counts using standard linear weights.
+  var GAMES_BY_DATE = {
+    "2026-09-25": [
+      {
+        game_pk: 824706, away_team: "Chicago Cubs", home_team: "Boston Red Sox", venue: "Fenway Park",
+        // parkBearing: compass direction from home plate toward straightaway
+        // center field, in degrees. Real value, pulled live from MLB's own
+        // venue API (GET /api/v1/venues/3?hydrate=location) -- Fenway Park.
+        parkBearing: 45.0,
+        away: { id: 656849, name: "David Peterson" },
+        home: { id: 678394, name: "Brayan Bello" },
+        weather: { speedMph: 9, dirDeg: 225, dirLabel: "Southwest", tempF: 68, sky: "Partly Cloudy", asOf: "6:40 PM ET" }
+      },
+      {
+        game_pk: 823085, away_team: "Los Angeles Angels", home_team: "Seattle Mariners", venue: "T-Mobile Park",
+        parkBearing: 49.0, // real, from MLB's venue API (venue id 680)
+        away: { id: 672282, name: "Reid Detmers" },
+        home: { id: 682243, name: "Bryce Miller" },
+        weather: { speedMph: 14, dirDeg: 45, dirLabel: "Northeast", tempF: 61, sky: "Clear", asOf: "7:05 PM PT" }
+      }
+    ]
+  };
+
+  // raw: [pa, ab, h, 2b, 3b, hr, r, rbi, bb, ibb, so, sb, cs, hbp, sf, np]
+  var LINEUPS = {
+    656849: { team: "Boston Red Sox", rows: [ // Peterson vs Red Sox batters
+      { id: 807799, name: "Roman Anthony", raw: null },
+      { id: 677649, name: "Jarren Duran", raw: [3,3,1,0,0,0,1,0,0,0,1,0,0,0,0,14] },
+      { id: 666971, name: "Rafael Devers", raw: null },
+      { id: 650859, name: "Trevor Story", raw: [4,4,0,0,0,0,0,0,0,0,2,0,0,0,0,19] },
+      { id: 668942, name: "Wilyer Abreu", raw: null }
+    ]},
+    678394: { team: "Chicago Cubs", rows: [ // Bello vs Cubs batters
+      { id: 663656, name: "Kyle Tucker", raw: [5,5,2,1,0,1,3,4,0,0,1,0,0,0,0,22] },
+      { id: 641355, name: "Dansby Swanson", raw: null },
+      { id: 672275, name: "Ian Happ", raw: [9,8,2,0,0,0,1,1,1,0,3,1,0,0,0,30] },
+      { id: 683737, name: "Pete Crow-Armstrong", raw: null },
+      { id: 666160, name: "Michael Busch", raw: null }
+    ]},
+    672282: { team: "Seattle Mariners", rows: [ // Detmers vs Mariners batters -- Raleigh row uses our real verified career totals
+      { id: 677594, name: "Julio Rodríguez", raw: null },
+      { id: 663728, name: "Cal Raleigh", raw: [18,18,3,0,0,2,4,6,0,0,7,0,0,0,0,86],
+        seasons: [
+          { season: "2021", opp: "Angels", raw: [1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,8] },
+          { season: "2023", opp: "Angels", raw: [5,5,1,0,0,1,1,2,0,0,1,0,0,0,0,22] },
+          { season: "2024", opp: "Angels", raw: [2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,7] },
+          { season: "2025", opp: "Angels", raw: [4,4,1,0,0,0,1,1,0,0,3,0,0,0,0,18] },
+          { season: "2026", opp: "Angels", raw: [6,6,1,0,0,1,2,3,0,0,3,0,0,0,0,31] }
+        ] },
+      { id: 650333, name: "Randy Arozarena", raw: [7,7,2,1,0,0,1,1,0,0,2,1,0,0,0,28] },
+      { id: 673962, name: "Jorge Polanco", raw: null }
+    ]},
+    682243: { team: "Los Angeles Angels", rows: [ // Miller vs Angels batters
+      { id: 608369, name: "Mike Trout", raw: [2,2,1,0,0,1,1,2,0,0,0,0,0,0,0,9] },
+      { id: 700363, name: "Zach Neto", raw: null },
+      { id: 672275, name: "Taylor Ward", raw: [6,6,1,0,0,0,0,0,0,0,2,0,0,0,0,24] },
+      { id: 681351, name: "Nolan Schanuel", raw: null }
+    ]}
+  };
+
+  function mockGetGames(date) { return new Promise(function (r) { setTimeout(function () { r(GAMES_BY_DATE[date] || []); }, 160); }); }
+  function mockGetLineup(pitcherId) { return new Promise(function (r) { setTimeout(function () { r(LINEUPS[pitcherId]); }, 220); }); }
+
+  var app = document.getElementById("app");
+  var currentDate = "2026-09-25";
+
+  function el(html) { var d = document.createElement("div"); d.innerHTML = html; return d.firstElementChild; }
+  function fmt3(n) { if (!isFinite(n)) return ".000"; var s = n.toFixed(3); return n < 1 ? s.replace(/^0/, "") : s; }
+
+  // raw = [pa, ab, h, 2b, 3b, hr, r, rbi, bb, ibb, so, sb, cs, hbp, sf, np]
+  function calc(raw) {
+    var pa=raw[0], ab=raw[1], h=raw[2], d2=raw[3], d3=raw[4], hr=raw[5], r=raw[6], rbi=raw[7],
+        bb=raw[8], ibb=raw[9], so=raw[10], sb=raw[11], cs=raw[12], hbp=raw[13], sf=raw[14], np=raw[15];
+    var singles = h - d2 - d3 - hr;
+    var tb = singles + 2*d2 + 3*d3 + 4*hr;
+    var avg = ab ? h/ab : 0;
+    var obpDenom = ab + bb + hbp + sf;
+    var obp = obpDenom ? (h+bb+hbp)/obpDenom : 0;
+    var slg = ab ? tb/ab : 0;
+    var ops = obp + slg;
+    var wobaDenom = ab + bb - ibb + sf + hbp;
+    var woba = wobaDenom ? (0.69*(bb-ibb) + 0.72*hbp + 0.888*singles + 1.271*d2 + 1.616*d3 + 2.101*hr) / wobaDenom : 0;
+    return { pa:pa, ab:ab, h:h, d2:d2, d3:d3, hr:hr, r:r, rbi:rbi, bb:bb, so:so, sb:sb, cs:cs, np:np,
+      avg: fmt3(avg), obp: fmt3(obp), slg: fmt3(slg), ops: fmt3(ops), woba: fmt3(woba), opsNum: ops };
+  }
+  function sumRaw(rows) {
+    var sums = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    rows.forEach(function (b) { if (!b.raw) return; b.raw.forEach(function (v, i) { sums[i] += v; }); });
+    return sums;
+  }
+
+  // ---- Home view ----
+  function renderHome() {
+    app.innerHTML = "";
+    var header = el(
+      '<header style="display:flex;flex-direction:column;gap:14px">' +
+        '<div class="eyebrow">At the plate</div>' +
+        '<h1>Today’s Games</h1>' +
+        '<p class="sub">Pick a game to see the batter-vs-pitcher breakdown and today’s wind conditions.</p>' +
+        '<div class="date-row">' +
+          '<input type="date" id="date-input" value="' + currentDate + '">' +
+          '<button class="today-btn" id="today-btn" type="button">Jump to an open date</button>' +
+        '</div>' +
+        '<p class="demo-note">This is a design preview with sample data, not the live site. Only Cal Raleigh vs. Reid Detmers uses real BVP counts; everything else (including weather) is a placeholder.</p>' +
+      '</header>'
+    );
+    app.appendChild(header);
+    var listHost = el('<div class="games-list"><div class="loading">Loading today’s games&hellip;</div></div>');
+    app.appendChild(listHost);
+    document.getElementById("date-input").addEventListener("change", function (e) { currentDate = e.target.value; loadGamesInto(listHost); });
+    document.getElementById("today-btn").addEventListener("click", function () {
+      currentDate = "2026-09-26"; document.getElementById("date-input").value = currentDate; loadGamesInto(listHost);
+    });
+    loadGamesInto(listHost);
+  }
+
+  function loadGamesInto(host) {
+    host.innerHTML = '<div class="loading">Loading today’s games&hellip;</div>';
+    mockGetGames(currentDate).then(function (games) {
+      host.innerHTML = "";
+      if (!games.length) {
+        host.appendChild(el('<div class="empty-day">No games on this date — nothing to show. Try September 25, 2026 to see a full slate.</div>'));
+        return;
+      }
+      games.forEach(function (g) {
+        var row = el(
+          '<button type="button" class="game-row">' +
+            '<div>' +
+              '<div class="matchup-name">' + g.away_team + '<span class="at">at</span>' + g.home_team + '</div>' +
+              '<div class="pitchers-line">' + g.away.name + ' vs ' + g.home.name + ' &middot; ' + g.venue + '</div>' +
+            '</div>' +
+            '<svg class="chev" viewBox="0 0 20 20" fill="none"><path d="M5 7.5 10 13 15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          '</button>'
+        );
+        row.addEventListener("click", function () { renderGame(g, g.away.id); });
+        host.appendChild(row);
+      });
+    });
+  }
+
+  // ---- Game view ----
+  function allPitchersToday() {
+    var list = [];
+    (GAMES_BY_DATE[currentDate] || []).forEach(function (g) {
+      list.push({ game: g, side: "away", id: g.away.id, name: g.away.name, team: g.away_team, opp: g.home_team });
+      list.push({ game: g, side: "home", id: g.home.id, name: g.home.name, team: g.home_team, opp: g.away_team });
+    });
+    return list;
+  }
+
+  function renderGame(game, startPitcherId) {
+    app.innerHTML = "";
+
+    var back = el('<button type="button" class="back-link">&larr; All games</button>');
+    back.addEventListener("click", renderHome);
+    app.appendChild(back);
+
+    app.appendChild(el(
+      '<div class="game-header">' +
+        '<h1>' + game.away_team + ' <span style="color:var(--muted);font-style:italic;font-weight:500">at</span> ' + game.home_team + '</h1>' +
+        '<div class="pitchers-line">' + game.away.name + ' vs ' + game.home.name + ' &middot; ' + game.venue + '</div>' +
+      '</div>'
+    ));
+
+    app.appendChild(renderWeatherCard(game));
+
+    app.appendChild(el('<div class="section-label">Batter vs. Pitcher</div>'));
+    app.appendChild(renderBvpSection(game, startPitcherId));
+
+    app.appendChild(el('<p class="tabs-note">More sections planned here — bullpen and prediction breakdowns.</p>'));
+  }
+
+  function renderBvpSection(game, startPitcherId) {
+    var wrap = el('<div style="display:flex;flex-direction:column;gap:12px"></div>');
+
+    var pitchers = allPitchersToday();
+    var options = pitchers.map(function (p) {
+      var sel = p.id === startPitcherId ? " selected" : "";
+      return '<option value="' + p.id + '"' + sel + '>' + p.name + ' (' + p.team + ') — vs ' + p.opp + '</option>';
+    }).join("");
+    var switcher = el(
+      '<div class="pitcher-switch">' +
+        '<label for="pitcher-select">Viewing lineup vs.</label>' +
+        '<select id="pitcher-select">' + options + '</select>' +
+      '</div>'
+    );
+    wrap.appendChild(switcher);
+
+    var captionHost = el('<div class="lineup-caption"></div>');
+    wrap.appendChild(captionHost);
+    var tableHost = el('<div></div>');
+    wrap.appendChild(tableHost);
+
+    var select = switcher.querySelector("select");
+    function loadPitcher(pitcherId) {
+      var entry = pitchers.filter(function (p) { return p.id === pitcherId; })[0];
+      if (entry.game.game_pk !== game.game_pk) {
+        // jumping to a pitcher in a different game -- open that game instead,
+        // so the header/venue/weather tab all match what's being shown
+        renderGame(entry.game, pitcherId);
+        return;
+      }
+      captionHost.innerHTML = 'Every <strong>' + entry.opp + '</strong> batter with recorded at-bats against <strong>' + entry.name + '</strong>.';
+      tableHost.innerHTML = '<div class="loading">Loading full stat line&hellip;</div>';
+      mockGetLineup(pitcherId).then(function (data) {
+        tableHost.innerHTML = "";
+        tableHost.appendChild(buildLineupTable(data));
+      });
+    }
+    select.addEventListener("change", function () { loadPitcher(parseInt(select.value, 10)); });
+    loadPitcher(startPitcherId);
+
+    return wrap;
+  }
+
+  var COLS = [
+    ["NP","np"], ["PA","pa"], ["AB","ab"], ["H","h"], ["2B","d2"], ["3B","d3"], ["HR","hr"],
+    ["R","r"], ["RBI","rbi"], ["BB","bb"], ["SO","so"], ["SB","sb"], ["CS","cs"],
+    ["AVG","avg"], ["OBP","obp"], ["SLG","slg"], ["OPS","ops"], ["wOBA","woba"]
+  ];
+
+  function buildLineupTable(data) {
+    var withHistory = data.rows.filter(function (b) { return b.raw; }).map(function (b) {
+      return { id: b.id, name: b.name, seasons: b.seasons, stats: calc(b.raw) };
+    });
+    var noHistory = data.rows.filter(function (b) { return !b.raw; });
+    withHistory.sort(function (a, b) { return b.stats.pa - a.stats.pa; });
+
+    var scroll = document.createElement("div");
+    scroll.className = "table-scroll";
+    var table = document.createElement("table");
+    table.className = "lineup";
+    table.innerHTML = "<thead><tr><th>Batter</th>" + COLS.map(function (c) { return "<th>" + c[0] + "</th>"; }).join("") + "</tr></thead>";
+    var tbody = document.createElement("tbody");
+
+    withHistory.forEach(function (b) {
+      var tr = document.createElement("tr");
+      var cells = COLS.map(function (c) {
+        var v = b.stats[c[1]];
+        var cls = c[1] === "ops" ? "ops-cell " + (b.stats.opsNum >= 0.85 ? "hot" : b.stats.opsNum <= 0.5 ? "cold" : "")
+          : c[1] === "woba" ? "woba-cell" : "";
+        return '<td class="' + cls + '">' + v + '</td>';
+      }).join("");
+      tr.innerHTML = '<td>' + b.name + '</td>' + cells;
+      if (b.seasons) { tr.style.cursor = "pointer"; tr.title = "Tap for season-by-season"; tr.addEventListener("click", function () { toggleSeasons(tr, b); }); }
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+
+    var sums = sumRaw(data.rows);
+    var teamStats = calc(sums);
+    var tfoot = document.createElement("tfoot");
+    var footCells = COLS.map(function (c) { return "<td>" + teamStats[c[1]] + "</td>"; }).join("");
+    tfoot.innerHTML = '<tr><td>Team totals vs. this pitcher</td>' + footCells + '</tr>';
+    table.appendChild(tfoot);
+
+    scroll.appendChild(table);
+
+    var wrap = document.createElement("div");
+    wrap.style.display = "flex"; wrap.style.flexDirection = "column"; wrap.style.gap = "8px";
+    wrap.appendChild(scroll);
+    if (noHistory.length) {
+      wrap.appendChild(el('<div class="no-history-note">No recorded at-bats yet: ' + noHistory.map(function (b) { return b.name; }).join(", ") + '</div>'));
+    }
+    return wrap;
+  }
+
+  function toggleSeasons(tr, batter) {
+    var next = tr.nextElementSibling;
+    if (next && next.classList.contains("season-row")) { next.remove(); return; }
+    document.querySelectorAll("tr.season-row").forEach(function (r) { r.remove(); });
+    var row = document.createElement("tr");
+    row.className = "season-row";
+    var cell = document.createElement("td");
+    cell.colSpan = COLS.length + 1;
+    cell.style.background = "var(--surface-2)";
+    cell.style.padding = "10px 12px";
+    var inner = '<div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">' + batter.name + ' by season</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left;font-size:10px;color:var(--muted);padding:3px 6px">Season</th>' +
+      COLS.map(function (c) { return '<th style="text-align:right;font-size:10px;color:var(--muted);padding:3px 6px">' + c[0] + '</th>'; }).join("") + '</tr></thead><tbody>';
+    inner += batter.seasons.map(function (s) {
+      var st = calc(s.raw);
+      return '<tr><td style="padding:3px 6px;font-family:var(--font-body)">' + s.season + ' vs ' + s.opp + '</td>' +
+        COLS.map(function (c) { return '<td style="text-align:right;padding:3px 6px;font-family:var(--font-mono)">' + st[c[1]] + '</td>'; }).join("") + '</tr>';
+    }).join("");
+    inner += '</tbody></table>';
+    cell.innerHTML = inner;
+    row.appendChild(cell);
+    tr.parentNode.insertBefore(row, tr.nextSibling);
+  }
+
+  // ---- Weather: wind drawn relative to the park's own layout ----
+  // dirDeg is the meteorological "wind FROM" bearing (true compass). We
+  // flip it 180° to get where the wind is blowing TOWARD, then subtract
+  // the park's own center-field bearing so 0deg = straight out to dead
+  // center, 90deg = toward right field, 180deg = blowing straight back in
+  // from center, 270deg = toward left field -- regardless of true compass
+  // direction, which nobody standing in the batter's box cares about.
+  function relativeWindDeg(game) {
+    var towardDeg = (game.weather.dirDeg + 180) % 360;
+    return (towardDeg - game.parkBearing + 360) % 360;
+  }
+
+  function windHeadline(rel, speed) {
+    if (speed < 4) return "Calm — not enough wind to matter";
+    var buckets = [
+      [22.5, "Blowing straight out to center — carries fly balls"],
+      [67.5, "Blowing out, toward right field"],
+      [112.5, "Blowing left to right, across the field"],
+      [157.5, "Blowing in, off the right-field side"],
+      [202.5, "Blowing straight in from center — holds up fly balls"],
+      [247.5, "Blowing in, off the left-field side"],
+      [292.5, "Blowing right to left, across the field"],
+      [337.5, "Blowing out, toward left field"]
+    ];
+    for (var i = 0; i < buckets.length; i++) { if (rel < buckets[i][0]) return buckets[i][1]; }
+    return "Blowing straight out to center — carries fly balls";
+  }
+
+  function renderWeatherCard(game) {
+    var w = game.weather;
+    var rel = relativeWindDeg(game);
+    var calm = w.speedMph < 4;
+
+    // field diagram: home plate fixed at bottom, CF always "up" -- the
+    // diagram itself is oriented to the park, so the arrow's rotation
+    // alone shows where the wind is headed relative to the field.
+    // The arrow is centered in the field (not anchored to home plate) so
+    // it never runs off the diagram: head = where the wind is headed,
+    // tail = where it's coming from. rel=0 -> head points at CF (up).
+    var acx = 64, acy = 56, half = 34;
+    var a = rel * Math.PI / 180;
+    var dx = Math.sin(a), dy = -Math.cos(a);
+    var headX = acx + dx * half, headY = acy + dy * half;
+    var tailX = acx - dx * half, tailY = acy - dy * half;
+    var perpX = dy * 7, perpY = -dx * 7;
+
+    var arrowSvg = calm ? "" :
+      '<line x1="' + tailX + '" y1="' + tailY + '" x2="' + headX + '" y2="' + headY + '" class="wind-arrow" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>' +
+      '<polygon class="wind-arrow" points="' + headX + ',' + headY + ' ' + (headX - dx * 11 + perpX) + ',' + (headY - dy * 11 + perpY) + ' ' + (headX - dx * 11 - perpX) + ',' + (headY - dy * 11 - perpY) + '"/>';
+
+    var wrap = el('<div></div>');
+    wrap.appendChild(el(
+      '<div class="weather-card">' +
+        '<svg class="field-diagram" viewBox="0 0 128 112">' +
+          '<path class="arc" d="M 14 32 Q 64 -4 114 32"/>' +
+          '<line class="foul-line" x1="64" y1="100" x2="14" y2="32"/>' +
+          '<line class="foul-line" x1="64" y1="100" x2="114" y2="32"/>' +
+          '<text class="field-label" x="22" y="26">LF</text>' +
+          '<text class="field-label" x="64" y="10">CF</text>' +
+          '<text class="field-label" x="106" y="26">RF</text>' +
+          '<circle class="plate" cx="64" cy="100" r="3.5"/>' +
+          arrowSvg +
+        '</svg>' +
+        '<div class="wx-readout">' +
+          '<div class="wx-headline">' + windHeadline(rel, w.speedMph) + '</div>' +
+          '<div class="wx-raw">' + w.speedMph + ' mph, from the ' + w.dirLabel + ' (true)</div>' +
+        '</div>' +
+        '<div class="wx-tiles">' +
+          '<div class="wx-tile"><div class="v">' + w.tempF + '°</div><div class="k">Temp</div></div>' +
+          '<div class="wx-tile"><div class="v" style="font-size:13px">' + w.sky + '</div><div class="k">Sky</div></div>' +
+        '</div>' +
+      '</div>'
+    ));
+    wrap.appendChild(el('<div class="wx-foot"><span>As of ' + w.asOf + ' &middot; ' + game.venue + '</span><a href="#" onclick="return false">National Weather Service</a></div>'));
+    return wrap;
+  }
+
+  renderHome();
+})();
+</script>

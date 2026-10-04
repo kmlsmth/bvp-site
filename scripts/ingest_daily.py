@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import sys
 import time
+import traceback
 from datetime import date
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from pathlib import Path
 # regardless of the caller's current working directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db
+import ingest_appearances
 import mlb_api
 import parsing
 import venues as venues_mod
@@ -78,6 +80,15 @@ def ingest_date(target_date: str, force: bool = False) -> int:
 
             venues_mod.refresh_weather(conn, game)
 
+            # Trailing-window box scores for both teams -- feeds bullpen
+            # fatigue and starter recent-form. Idempotent (skips games
+            # already backfilled), so safe to call for every game today
+            # even though most days this is a no-op after the first run.
+            for team_id in (game["home_team_id"], game["away_team_id"]):
+                n = ingest_appearances.backfill_team_appearances(conn, team_id, target_date)
+                if n:
+                    print(f"    appearances: team {team_id}, {n} new game(s) backfilled")
+
             matchup_pairs = []
             if home_pitcher:
                 matchup_pairs += _pairs_for_pitcher(
@@ -101,6 +112,87 @@ def ingest_date(target_date: str, force: bool = False) -> int:
         raise
     finally:
         conn.close()
+
+
+def refresh_probable_pitchers(target_date: str) -> int:
+    """Lightweight check that runs every hour REGARDLESS of whether
+    target_date's full ingestion has already happened for the day.
+
+    The full ingest_date() above is guarded by ingestion_runs so it only
+    does its (expensive) work once per date -- which means a probable
+    pitcher MLB announces later in the day (very common: teams often lock
+    in a starter, especially a bullpen-game "opener", just hours before
+    first pitch) never got picked up until the next calendar day. This
+    re-pulls just the schedule (one cheap API call) and fills in any
+    probable pitcher that's newly known since the last check, upserting
+    the game row the same way ingest_date does.
+
+    To stay cheap enough to run hourly all day, the expensive per-pitcher
+    work (pulling BVP stats against the opposing roster, backfilling
+    recent appearances) only runs for a pitcher that's newly discovered
+    this pass -- not the whole day's slate, which ingest_date already
+    covers once. Returns how many newly-announced pitchers were found.
+    """
+    conn = db.connect()
+    newly_found = 0
+    try:
+        schedule_raw = mlb_api.get_schedule(target_date)
+        games = parsing.parse_schedule(schedule_raw)
+
+        for game in games:
+            status = (game.get("status") or "").strip().lower()
+            if status in ingest_appearances._COMPLETED_STATUSES:
+                continue  # nothing left to announce for a finished game
+
+            existing = conn.execute(
+                "SELECT home_probable_pitcher_id, away_probable_pitcher_id "
+                "FROM games WHERE game_pk = ?",
+                (game["game_pk"],),
+            ).fetchone()
+            had_home = existing[0] if existing else None
+            had_away = existing[1] if existing else None
+
+            db.upsert_team(conn, game["home_team_id"], game["home_team_name"])
+            db.upsert_team(conn, game["away_team_id"], game["away_team_name"])
+
+            home_pitcher = game["home_probable_pitcher_id"]
+            away_pitcher = game["away_probable_pitcher_id"]
+            if home_pitcher:
+                db.upsert_player(conn, home_pitcher,
+                                  game["home_probable_pitcher_name"], role="pitcher")
+            if away_pitcher:
+                db.upsert_player(conn, away_pitcher,
+                                  game["away_probable_pitcher_name"], role="pitcher")
+
+            venues_mod.ensure_venue(conn, game.get("venue_id"))
+            db.upsert_game(conn, game)
+            conn.commit()
+
+            new_pairs = []
+            if home_pitcher is not None and home_pitcher != had_home:
+                print(f"    newly announced: {game['home_probable_pitcher_name']} "
+                      f"(game {game['game_pk']})")
+                newly_found += 1
+                new_pairs += _pairs_for_pitcher(conn, home_pitcher, game["away_team_id"])
+                ingest_appearances.backfill_team_appearances(conn, game["home_team_id"], target_date)
+            if away_pitcher is not None and away_pitcher != had_away:
+                print(f"    newly announced: {game['away_probable_pitcher_name']} "
+                      f"(game {game['game_pk']})")
+                newly_found += 1
+                new_pairs += _pairs_for_pitcher(conn, away_pitcher, game["home_team_id"])
+                ingest_appearances.backfill_team_appearances(conn, game["away_team_id"], target_date)
+
+            for batter_id, pitcher_id in new_pairs:
+                _ingest_matchup(conn, batter_id, pitcher_id)
+    except Exception:
+        # Same philosophy as the scheduler loop around ingest_date: a bad
+        # hour (API hiccup, unexpected shape) shouldn't crash the process
+        # or block the next check.
+        print(f"[refresh_probable_pitchers] {target_date} failed:")
+        traceback.print_exc()
+    finally:
+        conn.close()
+    return newly_found
 
 
 def _pairs_for_pitcher(conn, pitcher_id: int, opposing_team_id: int) -> list[tuple[int, int]]:

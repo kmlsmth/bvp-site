@@ -150,6 +150,75 @@ def parse_venue(raw: dict) -> dict | None:
     }
 
 
+def _innings_pitched_to_outs(ip_str: str | None) -> int | None:
+    """MLB reports innings pitched as e.g. "6.0", "5.1", "5.2" -- the digit
+    after the decimal is OUTS (1 or 2), not a tenth of an inning. Converts
+    to a plain outs-recorded integer (18, 16, 17) so appearances can be
+    summed correctly; "5.1" + "0.2" has to equal "6.0", which only works
+    in outs, not in floating-point innings."""
+    if not ip_str:
+        return None
+    whole_str, _, frac_str = ip_str.partition(".")
+    try:
+        whole = int(whole_str)
+        frac = int(frac_str) if frac_str else 0
+    except ValueError:
+        return None
+    if frac not in (0, 1, 2):
+        frac = 0  # defensive -- MLB shouldn't send anything else here
+    return whole * 3 + frac
+
+
+def parse_boxscore(raw: dict, game_pk: int, game_date: str) -> list[dict]:
+    """Every pitcher's line from one game's box score, for both teams.
+
+    Starter vs. reliever is read two ways and cross-checked: the
+    "gamesStarted" flag on the player's own pitching stat line, and
+    whether they're first in their team's "pitchers" list (the order
+    pitchers entered the game) -- belt and suspenders, since this feeds a
+    public-facing fatigue grade and getting the one starter wrong per team
+    would throw it off. A player with no "pitching" stats block didn't
+    pitch in this game and is skipped.
+    """
+    appearances: list[dict] = []
+    teams = raw.get("teams", {}) or {}
+    for side in ("home", "away"):
+        team_block = teams.get(side, {}) or {}
+        team_id = (team_block.get("team") or {}).get("id")
+        first_pitcher_id = (team_block.get("pitchers") or [None])[0]
+        players = team_block.get("players", {}) or {}
+
+        for p in players.values():
+            pitching = ((p.get("stats") or {}).get("pitching")) or {}
+            if not pitching:
+                continue
+            person = p.get("person") or {}
+            pitcher_id = person.get("id")
+            if pitcher_id is None:
+                continue
+            outs = _innings_pitched_to_outs(pitching.get("inningsPitched"))
+            if outs is None:
+                continue
+
+            is_starter = bool(pitching.get("gamesStarted")) or pitcher_id == first_pitcher_id
+            appearances.append({
+                "game_pk": game_pk,
+                "pitcher_id": pitcher_id,
+                "pitcher_name": person.get("fullName"),
+                "team_id": team_id,
+                "game_date": game_date,
+                "role": "starter" if is_starter else "reliever",
+                "outs": outs,
+                "pitches": pitching.get("numberOfPitches"),
+                "batters_faced": pitching.get("battersFaced"),
+                "earned_runs": pitching.get("earnedRuns"),
+                "base_on_balls": pitching.get("baseOnBalls"),
+                "strike_outs": pitching.get("strikeOuts"),
+                "hits": pitching.get("hits"),
+            })
+    return appearances
+
+
 def parse_roster(raw: dict) -> list[dict]:
     """One row per player on a team's roster."""
     players = []

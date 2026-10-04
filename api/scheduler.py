@@ -39,6 +39,13 @@ def _loop() -> None:
             # next hour.
             print(f"[scheduler] ingestion for {today} failed:")
             traceback.print_exc()
+        # ingest_date() above only does its full (expensive) work once per
+        # date -- so on every other hourly tick this is what actually
+        # catches a probable pitcher MLB announces later in the day (it
+        # has its own internal error handling, so no try/except needed
+        # here). See ingest_daily.refresh_probable_pitchers for why this
+        # is a separate, cheap pass rather than folded into ingest_date.
+        ingest_daily.refresh_probable_pitchers(today)
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 

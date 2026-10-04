@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS venues (
     center                  INTEGER,
     right_center            INTEGER,
     right_line              INTEGER,
+    hr_factor               REAL,   -- park factor, 100 = league average, from a
+                                    -- hand-seeded reference (scripts/seed_park_factors.py)
+                                    -- -- NOT pulled by daily ingestion, since park
+                                    -- factors don't change game to game. NULL until seeded.
+    hit_factor               REAL,  -- same scale/source as hr_factor, for hits overall
     nws_forecast_hourly_url TEXT,   -- unused (left over from an earlier weather
                                     -- source, National Weather Service, that
                                     -- only covered U.S. parks); harmless to keep
@@ -147,6 +152,39 @@ CREATE TABLE IF NOT EXISTS matchup_season (
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (batter_id, pitcher_id, season)
 );
+
+-- One row per pitcher per game: the actual box-score line, not a season
+-- total. This is what both bullpen fatigue and starter recent-form trends
+-- are built from -- a reliever's rolling 7-day workload and a starter's
+-- last-3/5-starts line are just two different slices of the same table.
+-- `role` comes from the box score's own "gamesStarted" flag, not a guess.
+-- innings_outs stores outs recorded (18 = 6.0 IP, 17 = 5.2 IP) rather than
+-- a fractional innings number, since outs add up correctly and fractional
+-- innings (".1" = one out, not one tenth) do not.
+CREATE TABLE IF NOT EXISTS pitcher_appearances (
+    -- Deliberately NOT "REFERENCES games(game_pk)": most rows here are
+    -- backfilled from a team's recent game history, which is pulled
+    -- directly from the schedule-range endpoint and never written to the
+    -- `games` table (that table only ever holds today's slate). A plain
+    -- integer game_pk is enough to dedupe on (see the primary key below).
+    game_pk         INTEGER NOT NULL,
+    pitcher_id      INTEGER NOT NULL REFERENCES players(id),
+    team_id         INTEGER REFERENCES teams(id),
+    game_date       TEXT NOT NULL,
+    role            TEXT CHECK(role IN ('starter', 'reliever')),
+    outs            INTEGER,   -- outs recorded this appearance
+    pitches         INTEGER,
+    batters_faced   INTEGER,
+    earned_runs     INTEGER,
+    base_on_balls   INTEGER,
+    strike_outs     INTEGER,
+    hits            INTEGER,
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (game_pk, pitcher_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_appearances_pitcher_date ON pitcher_appearances(pitcher_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_appearances_team_date ON pitcher_appearances(team_id, game_date);
 
 CREATE INDEX IF NOT EXISTS idx_matchup_season_batter ON matchup_season(batter_id);
 CREATE INDEX IF NOT EXISTS idx_matchup_season_pitcher ON matchup_season(pitcher_id);

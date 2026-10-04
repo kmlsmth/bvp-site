@@ -28,6 +28,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -39,9 +40,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # automatically add api/ itself to sys.path the way it does for a script.
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bullpen as bullpen_module  # noqa: E402
 import db as db_module  # noqa: E402  (shares BVP_DATA_DIR / DB_PATH logic)
 import init_db as init_db_module  # noqa: E402
 import stats as stats_module  # noqa: E402
+
+BULLPEN_WINDOW_DAYS = 7  # trailing window for fatigue + recent appearances
 
 DB_PATH = db_module.DB_PATH
 WEB_DIR = ROOT / "web"
@@ -76,6 +80,56 @@ def query_db(sql: str, params: tuple = ()) -> list[dict]:
         conn.close()
 
 
+def _window(as_of_date: str) -> tuple[str, str]:
+    """The trailing BULLPEN_WINDOW_DAYS before as_of_date (both inclusive,
+    never including as_of_date itself -- matches ingest_appearances.py,
+    which only ever backfills games strictly before the ingestion date)."""
+    as_of = date.fromisoformat(as_of_date)
+    start = (as_of - timedelta(days=BULLPEN_WINDOW_DAYS)).isoformat()
+    end = (as_of - timedelta(days=1)).isoformat()
+    return start, end
+
+
+def _league_avg_weekly_reliever_pitches(as_of_date: str) -> float:
+    """The 30-team average weekly bullpen pitch count, so one team's
+    workload is judged against its real peers rather than a guessed fixed
+    number. Early in a season (or in this site's early days, before much
+    history has been ingested) this naturally has fewer teams to average
+    over -- compute_bullpen_fatigue() falls back to treating "no data yet"
+    as average rather than crashing or returning a misleading score."""
+    start, end = _window(as_of_date)
+    rows = query_db(
+        """
+        SELECT team_id, SUM(pitches) AS total
+        FROM pitcher_appearances
+        WHERE role = 'reliever' AND game_date BETWEEN ? AND ?
+        GROUP BY team_id
+        """,
+        (start, end),
+    )
+    totals = [r["total"] for r in rows if r["total"]]
+    return sum(totals) / len(totals) if totals else 0.0
+
+
+def _team_bullpen_rows(team_id: int, as_of_date: str) -> list[dict]:
+    start, end = _window(as_of_date)
+    return query_db(
+        """
+        SELECT pa.pitcher_id, p.full_name, pa.game_date, pa.pitches, pa.outs
+        FROM pitcher_appearances pa
+        JOIN players p ON p.id = pa.pitcher_id
+        WHERE pa.role = 'reliever' AND pa.team_id = ? AND pa.game_date BETWEEN ? AND ?
+        ORDER BY pa.game_date DESC
+        """,
+        (team_id, start, end),
+    )
+
+
+def _team_fatigue(team_id: int, as_of_date: str, league_avg: float) -> dict:
+    rows = _team_bullpen_rows(team_id, as_of_date)
+    return bullpen_module.compute_bullpen_fatigue(rows, as_of_date, league_avg)
+
+
 @app.get("/api/games")
 def games():
     game_date = request.args.get("date")
@@ -90,7 +144,8 @@ def games():
                hp.full_name AS home_probable_pitcher, g.home_probable_pitcher_id,
                ap.full_name AS away_probable_pitcher, g.away_probable_pitcher_id,
                v.id AS venue_id, v.name AS venue_name, v.azimuth_angle AS venue_azimuth_angle,
-               v.roof_type AS venue_roof_type,
+               v.roof_type AS venue_roof_type, v.hr_factor AS venue_hr_factor,
+               v.hit_factor AS venue_hit_factor,
                gw.wind_speed_mph, gw.wind_dir_deg, gw.wind_dir_compass,
                gw.temp_f, gw.sky, gw.forecast_time
         FROM games g
@@ -105,6 +160,20 @@ def games():
         """,
         (game_date,),
     )
+
+    # Bullpen fatigue, one grade per team -- computed once per unique team
+    # on the slate (not once per game row) and cached for this request,
+    # since the league-average baseline and each team's score are the same
+    # regardless of which game they're attached to.
+    team_ids = {r["home_team_id"] for r in rows} | {r["away_team_id"] for r in rows}
+    team_ids.discard(None)
+    if team_ids:
+        league_avg = _league_avg_weekly_reliever_pitches(game_date)
+        fatigue_by_team = {tid: _team_fatigue(tid, game_date, league_avg) for tid in team_ids}
+        for r in rows:
+            r["home_bullpen_fatigue"] = fatigue_by_team.get(r["home_team_id"])
+            r["away_bullpen_fatigue"] = fatigue_by_team.get(r["away_team_id"])
+
     return jsonify(rows)
 
 
@@ -161,6 +230,19 @@ def lineup():
     team_rows = query_db("SELECT name FROM teams WHERE id = ?", (opponent_team_id,))
     pitcher_name = pitcher_rows[0]["full_name"] if pitcher_rows else None
     team_name = team_rows[0]["name"] if team_rows else None
+
+    # Last 10 starts is comfortably more than the 5 pitcher_recent_form()
+    # actually uses -- pulled this way (not LIMIT 5) so a pitcher who
+    # skipped a turn in the rotation still gets 5 *starts*, not 5 rows
+    # that happen to include a gap.
+    starter_rows = query_db(
+        "SELECT game_date, outs, pitches, batters_faced, earned_runs, "
+        "base_on_balls, strike_outs, hits "
+        "FROM pitcher_appearances WHERE pitcher_id = ? AND role = 'starter' "
+        "ORDER BY game_date DESC LIMIT 10",
+        (pitcher_id,),
+    )
+    recent_form = bullpen_module.pitcher_recent_form(starter_rows, n=5)
 
     roster = query_db(
         """
@@ -219,11 +301,52 @@ def lineup():
     team_totals = stats_module.compute_batting_stats(team_totals_raw)
 
     return jsonify({
-        "pitcher": {"id": pitcher_id, "name": pitcher_name},
+        "pitcher": {"id": pitcher_id, "name": pitcher_name, "recent_form": recent_form},
         "opponent_team": {"id": opponent_team_id, "name": team_name},
         "rows": with_history,
         "no_history": no_history,
         "team_totals": team_totals,
+    })
+
+
+@app.get("/api/bullpen")
+def bullpen_route():
+    """One team's bullpen fatigue grade plus a per-reliever breakdown over
+    the trailing window -- what the game page's "Bullpen Watch" card needs.
+    Kept as its own call (rather than folded into /api/lineup) since the
+    homepage's schedule badges need the fatigue grade without the rest of
+    this payload, via /api/games -- this endpoint is only for the drill-in.
+    """
+    team_id = request.args.get("team", type=int)
+    game_date = request.args.get("date")
+    if not team_id or not game_date:
+        return jsonify({"error": "team and date query params are required, e.g. ?team=147&date=2026-10-02"}), 400
+
+    rows = _team_bullpen_rows(team_id, game_date)
+    league_avg = _league_avg_weekly_reliever_pitches(game_date)
+    fatigue = bullpen_module.compute_bullpen_fatigue(rows, game_date, league_avg)
+
+    by_pitcher: dict[int, dict] = {}
+    for r in rows:
+        pid = r["pitcher_id"]
+        entry = by_pitcher.setdefault(pid, {
+            "id": pid, "name": r["full_name"], "appearances": 0,
+            "pitches": 0, "last_appearance": None,
+        })
+        entry["appearances"] += 1
+        entry["pitches"] += r["pitches"] or 0
+        if entry["last_appearance"] is None or r["game_date"] > entry["last_appearance"]:
+            entry["last_appearance"] = r["game_date"]
+    relievers = sorted(by_pitcher.values(), key=lambda x: x["pitches"], reverse=True)
+
+    team_rows = query_db("SELECT name FROM teams WHERE id = ?", (team_id,))
+    team_name = team_rows[0]["name"] if team_rows else None
+
+    return jsonify({
+        "team": {"id": team_id, "name": team_name},
+        "fatigue": fatigue,
+        "relievers": relievers,
+        "window_days": BULLPEN_WINDOW_DAYS,
     })
 
 

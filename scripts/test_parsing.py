@@ -72,5 +72,98 @@ def main() -> None:
     print("\nAll parsing + db tests passed.")
 
 
+def test_innings_pitched_to_outs() -> None:
+    assert parsing._innings_pitched_to_outs("6.0") == 18
+    assert parsing._innings_pitched_to_outs("5.1") == 16
+    assert parsing._innings_pitched_to_outs("5.2") == 17
+    assert parsing._innings_pitched_to_outs("0.0") == 0
+    assert parsing._innings_pitched_to_outs(None) is None
+    assert parsing._innings_pitched_to_outs("") is None
+    print("test_innings_pitched_to_outs OK")
+
+
+# Hand-built, following the MLB Stats API's documented box-score shape
+# (same stat field names -- baseOnBalls, strikeOuts, numberOfPitches, etc.
+# -- already verified elsewhere in this codebase's vsPlayer responses).
+# Not a captured live response like the fixture above -- worth a one-time
+# spot-check against a real completed game's box score before fully
+# trusting this in production.
+_FAKE_BOXSCORE = {
+    "teams": {
+        "away": {
+            "team": {"id": 147},  # Yankees
+            "pitchers": [605483, 123456],  # starter listed first
+            "players": {
+                "ID605483": {
+                    "person": {"id": 605483, "fullName": "Blake Snell"},
+                    "stats": {"pitching": {
+                        "gamesStarted": 1, "inningsPitched": "6.0",
+                        "numberOfPitches": 94, "battersFaced": 23,
+                        "earnedRuns": 2, "baseOnBalls": 1,
+                        "strikeOuts": 7, "hits": 4,
+                    }},
+                },
+                "ID123456": {
+                    "person": {"id": 123456, "fullName": "Middle Reliever"},
+                    "stats": {"pitching": {
+                        "gamesStarted": 0, "inningsPitched": "1.1",
+                        "numberOfPitches": 19, "battersFaced": 5,
+                        "earnedRuns": 0, "baseOnBalls": 0,
+                        "strikeOuts": 2, "hits": 1,
+                    }},
+                },
+                "ID592450": {  # a position player -- no pitching block
+                    "person": {"id": 592450, "fullName": "Aaron Judge"},
+                    "stats": {"batting": {"hits": 1}},
+                },
+            },
+        },
+        "home": {
+            "team": {"id": 137},
+            "pitchers": [999001],
+            "players": {
+                "ID999001": {
+                    "person": {"id": 999001, "fullName": "Home Starter"},
+                    "stats": {"pitching": {
+                        "gamesStarted": 1, "inningsPitched": "5.2",
+                        "numberOfPitches": 101, "battersFaced": 26,
+                        "earnedRuns": 3, "baseOnBalls": 3,
+                        "strikeOuts": 5, "hits": 6,
+                    }},
+                },
+            },
+        },
+    },
+}
+
+
+def test_parse_boxscore() -> None:
+    rows = parsing.parse_boxscore(_FAKE_BOXSCORE, game_pk=777001, game_date="2026-09-30")
+    assert len(rows) == 3, f"expected 3 pitching lines (batter skipped), got {len(rows)}"
+
+    by_id = {r["pitcher_id"]: r for r in rows}
+    snell = by_id[605483]
+    assert snell["role"] == "starter"
+    assert snell["outs"] == 18
+    assert snell["team_id"] == 147
+    assert snell["game_pk"] == 777001
+    assert snell["game_date"] == "2026-09-30"
+
+    reliever = by_id[123456]
+    assert reliever["role"] == "reliever"
+    assert reliever["outs"] == 4  # 1.1 IP -> 3 + 1
+
+    home_starter = by_id[999001]
+    assert home_starter["role"] == "starter"
+    assert home_starter["outs"] == 17  # 5.2 IP -> 15 + 2
+    assert home_starter["team_id"] == 137
+
+    assert 592450 not in by_id, "position player with no pitching block should be skipped"
+    print(f"test_parse_boxscore OK: {len(rows)} pitching lines")
+
+
 if __name__ == "__main__":
     main()
+    test_innings_pitched_to_outs()
+    test_parse_boxscore()
+    print("\nAll boxscore parsing tests passed.")

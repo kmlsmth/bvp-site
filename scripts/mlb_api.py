@@ -63,3 +63,30 @@ def get_vs_player(batter_id: int, pitcher_id: int) -> dict:
     resp = requests.get(url, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json()
+
+
+def get_team_schedule_range(team_id: int, start_date: str, end_date: str) -> dict:
+    """A team's games (any status) between two dates (both YYYY-MM-DD,
+    inclusive) -- used to find which recent games need a box score pulled
+    for bullpen-fatigue/starter-form tracking, without one API call per day.
+    """
+    url = f"{BASE_URL}/schedule"
+    params = {
+        "sportId": 1,
+        "teamId": team_id,
+        "startDate": start_date,
+        "endDate": end_date,
+    }
+    resp = requests.get(url, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_boxscore(game_pk: int) -> dict:
+    """Full box score for one game: every pitcher's line (innings, pitches,
+    runs, walks, strikeouts, hits) for both teams. This is the one new data
+    source bullpen fatigue and starter recent-form both read from."""
+    url = f"{BASE_URL}/game/{game_pk}/boxscore"
+    resp = requests.get(url, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()

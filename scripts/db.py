@@ -182,6 +182,44 @@ def upsert_matchup_career(conn: sqlite3.Connection, row: dict) -> None:
     )
 
 
+_APPEARANCE_COLS = [
+    "game_pk", "pitcher_id", "team_id", "game_date", "role", "outs",
+    "pitches", "batters_faced", "earned_runs", "base_on_balls",
+    "strike_outs", "hits",
+]
+
+
+def upsert_pitcher_appearance(conn: sqlite3.Connection, row: dict) -> None:
+    """One pitcher's line from one game's box score. Idempotent: re-running
+    ingestion for an already-stored game updates the row in place (an
+    official scorer's correction after the fact is rare but does happen)
+    rather than erroring or duplicating."""
+    placeholders = ", ".join("?" for _ in _APPEARANCE_COLS)
+    update_clause = ", ".join(
+        f"{c} = excluded.{c}" for c in _APPEARANCE_COLS if c not in ("game_pk", "pitcher_id")
+    )
+    conn.execute(
+        f"""
+        INSERT INTO pitcher_appearances ({", ".join(_APPEARANCE_COLS)}, updated_at)
+        VALUES ({placeholders}, datetime('now'))
+        ON CONFLICT(game_pk, pitcher_id) DO UPDATE SET
+            {update_clause}, updated_at = datetime('now')
+        """,
+        [row.get(c) for c in _APPEARANCE_COLS],
+    )
+
+
+def appearance_exists(conn: sqlite3.Connection, game_pk: int) -> bool:
+    """Whether this game's box score has already been pulled -- a completed
+    game's pitching lines don't change, so there's no reason to re-fetch
+    and re-parse the box score every day a team happens to still be in the
+    trailing lookback window."""
+    row = conn.execute(
+        "SELECT 1 FROM pitcher_appearances WHERE game_pk = ? LIMIT 1", (game_pk,)
+    ).fetchone()
+    return row is not None
+
+
 _SEASON_COLS = ["team_id", "opponent_id"] + _CAREER_COLS
 
 

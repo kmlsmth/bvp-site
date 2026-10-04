@@ -25,6 +25,7 @@ _NEW_COLUMNS = {
                         ("caught_stealing", "INTEGER")],
     "matchup_season": [("runs", "INTEGER"), ("stolen_bases", "INTEGER"),
                         ("caught_stealing", "INTEGER")],
+    "venues": [("hr_factor", "REAL"), ("hit_factor", "REAL")],
 }
 
 
@@ -44,6 +45,14 @@ def init_db(db_path: Path = DB_PATH) -> None:
         conn.executescript(SCHEMA_PATH.read_text())
         conn.commit()
         _migrate(conn)
+        # Best-effort: fill in park factors for any venue we've already
+        # ingested that doesn't have them yet. Wrapped defensively -- a
+        # problem here should never block the app from starting up.
+        try:
+            import seed_park_factors
+            seed_park_factors.seed(conn)
+        except Exception as exc:
+            print(f"    park factor seeding skipped: {exc}")
     finally:
         conn.close()
     print(f"Database ready at {db_path}")

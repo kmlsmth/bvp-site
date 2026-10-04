@@ -30,7 +30,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 ROOT = Path(__file__).resolve().parent.parent
 # Make both scripts/ and this file's own directory importable regardless of
@@ -41,8 +41,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db as db_module  # noqa: E402  (shares BVP_DATA_DIR / DB_PATH logic)
 import init_db as init_db_module  # noqa: E402
+import stats as stats_module  # noqa: E402
 
 DB_PATH = db_module.DB_PATH
+WEB_DIR = ROOT / "web"
 
 # Idempotent: CREATE TABLE IF NOT EXISTS, so this is safe to run on every
 # boot. Makes sure the database (and its parent dir, e.g. a fresh Railway
@@ -54,6 +56,14 @@ app = Flask(__name__)
 if not os.environ.get("SKIP_SCHEDULER"):
     import scheduler
     scheduler.start()
+
+
+@app.get("/")
+def index():
+    """The whole front end is one self-contained page (web/index.html) --
+    it does its own routing client-side (see the hash-based router in that
+    file), so this is the only page route the server needs."""
+    return send_from_directory(WEB_DIR, "index.html")
 
 
 def query_db(sql: str, params: tuple = ()) -> list[dict]:
@@ -75,7 +85,8 @@ def games():
     rows = query_db(
         """
         SELECT g.game_pk, g.game_date, g.game_date_time, g.game_type, g.status,
-               ht.name AS home_team, at.name AS away_team,
+               g.home_team_id, ht.name AS home_team,
+               g.away_team_id, at.name AS away_team,
                hp.full_name AS home_probable_pitcher, g.home_probable_pitcher_id,
                ap.full_name AS away_probable_pitcher, g.away_probable_pitcher_id,
                v.id AS venue_id, v.name AS venue_name, v.azimuth_angle AS venue_azimuth_angle,
@@ -129,6 +140,91 @@ def matchup():
         return jsonify({"career": None, "seasons": [], "message": "No recorded history between these two players."})
 
     return jsonify({"career": career[0], "seasons": seasons})
+
+
+@app.get("/api/lineup")
+def lineup():
+    """Every batter on one team's roster against one probable pitcher, in
+    a single call -- what the front end's full stat-line table needs.
+
+    Fetching this one batter/pitcher pair at a time (like /api/matchup
+    above) would mean ~13 separate calls per lineup table; this does it
+    in one, which is what makes the pitcher-switcher dropdown feel
+    instant instead of spinning for a few seconds on every switch.
+    """
+    pitcher_id = request.args.get("pitcher", type=int)
+    opponent_team_id = request.args.get("opponent_team", type=int)
+    if not pitcher_id or not opponent_team_id:
+        return jsonify({"error": "pitcher and opponent_team query params (ids) are required"}), 400
+
+    pitcher_rows = query_db("SELECT full_name FROM players WHERE id = ?", (pitcher_id,))
+    team_rows = query_db("SELECT name FROM teams WHERE id = ?", (opponent_team_id,))
+    pitcher_name = pitcher_rows[0]["full_name"] if pitcher_rows else None
+    team_name = team_rows[0]["name"] if team_rows else None
+
+    roster = query_db(
+        """
+        SELECT id, full_name FROM players
+        WHERE team_id = ? AND role IN ('batter', 'both')
+        ORDER BY full_name
+        """,
+        (opponent_team_id,),
+    )
+
+    careers = {
+        row["batter_id"]: row
+        for row in query_db("SELECT * FROM matchup_career WHERE pitcher_id = ?", (pitcher_id,))
+    }
+    season_rows = query_db(
+        """
+        SELECT ms.*, ot.name AS opponent_name
+        FROM matchup_season ms
+        LEFT JOIN teams ot ON ot.id = ms.opponent_id
+        WHERE ms.pitcher_id = ?
+        ORDER BY ms.season
+        """,
+        (pitcher_id,),
+    )
+    seasons_by_batter: dict[int, list[dict]] = {}
+    for s in season_rows:
+        seasons_by_batter.setdefault(s["batter_id"], []).append(s)
+
+    with_history = []
+    no_history = []
+    for batter in roster:
+        career = careers.get(batter["id"])
+        if career is None:
+            no_history.append({"id": batter["id"], "name": batter["full_name"]})
+            continue
+        seasons = [
+            {
+                "season": s["season"],
+                "opponent_name": s["opponent_name"],
+                **stats_module.compute_batting_stats(s),
+            }
+            for s in seasons_by_batter.get(batter["id"], [])
+        ]
+        with_history.append({
+            "id": batter["id"],
+            "name": batter["full_name"],
+            "stats": stats_module.compute_batting_stats(career),
+            "seasons": seasons,
+        })
+
+    with_history.sort(key=lambda b: b["stats"]["pa"] or 0, reverse=True)
+
+    team_totals_raw = stats_module.sum_raw_counts(
+        [careers[b["id"]] for b in roster if b["id"] in careers]
+    )
+    team_totals = stats_module.compute_batting_stats(team_totals_raw)
+
+    return jsonify({
+        "pitcher": {"id": pitcher_id, "name": pitcher_name},
+        "opponent_team": {"id": opponent_team_id, "name": team_name},
+        "rows": with_history,
+        "no_history": no_history,
+        "team_totals": team_totals,
+    })
 
 
 @app.get("/api/players")

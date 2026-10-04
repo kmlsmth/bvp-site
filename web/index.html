@@ -108,6 +108,7 @@
   }
   .back-link:hover { color: var(--accent); }
   .game-header .pitchers-line { font-size: 13.5px; color: var(--muted); }
+  .game-header .game-time-line { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); margin-top: 6px; }
 
   .section-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 4px 2px -4px; }
   .tabs-note { font-size: 12px; color: var(--muted); font-style: italic; }
@@ -393,9 +394,12 @@
     back.addEventListener("click", function () { location.hash = "#/"; });
     app.appendChild(back);
 
+    var gameTime = formatGameTimeEtPt(game.game_date_time);
+
     app.appendChild(el(
       '<div class="game-header">' +
         '<h1>' + escapeHtml(game.away_team) + ' <span style="color:var(--muted);font-style:italic;font-weight:500">at</span> ' + escapeHtml(game.home_team) + '</h1>' +
+        (gameTime ? '<div class="game-time-line">' + gameTime + '</div>' : "") +
         '<div class="pitchers-line">' + pitchersLineText(game) + ' &middot; ' + escapeHtml(game.venue_name || "Venue TBD") + '</div>' +
       '</div>'
     ));
@@ -417,7 +421,8 @@
 
   function fatigueSummaryText(fatigue) {
     if (!fatigue) return "Loading&hellip;";
-    return fatigue.label + ' &middot; ' + fatigue.weekly_pitches + ' pitches over the last ' + BULLPEN_WINDOW_DAYS + ' days' +
+    return fatigue.label + ' (' + fatigue.score + '/100)' +
+      ' &middot; ' + fatigue.weekly_pitches + ' pitches over the last ' + BULLPEN_WINDOW_DAYS + ' days' +
       ' &middot; ' + fatigue.relievers_used + ' reliever' + (fatigue.relievers_used === 1 ? "" : "s") + ' used';
   }
 
@@ -618,6 +623,28 @@
     return "Blowing straight out to center — carries fly balls";
   }
 
+  function formatGameTimeEtPt(iso) {
+    // Game time explicitly in ET and PT, regardless of the viewer's own
+    // timezone -- betting research skews toward those two no matter where
+    // the viewer actually is, so (unlike the weather forecast time below,
+    // which is shown in local time) this doesn't follow the browser's
+    // timezone. game_date_time comes from MLB already as a proper
+    // UTC-with-"Z" timestamp, so no manual "Z" append is needed here.
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    var datePart = d.toLocaleDateString("en-US", {
+      timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric"
+    });
+    var et = d.toLocaleTimeString("en-US", {
+      timeZone: "America/New_York", hour: "numeric", minute: "2-digit"
+    });
+    var pt = d.toLocaleTimeString("en-US", {
+      timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit"
+    });
+    return datePart + " · " + et + " ET / " + pt + " PT";
+  }
+
   function formatForecastTime(iso) {
     if (!iso) return null;
     // Stored in UTC with no offset suffix (e.g. "2026-10-02T21:00") --
@@ -636,7 +663,9 @@
 
     var hasParkFactor = game.venue_hr_factor !== null && game.venue_hr_factor !== undefined;
     var parkFactorTile = hasParkFactor ?
-      '<div class="wx-tile"><div class="v">' + game.venue_hr_factor + '</div><div class="k">HR factor</div></div>' : "";
+      '<div class="wx-tile" title="100 = league-average home runs for this park; ' + game.venue_hr_factor +
+      ' means about ' + Math.round(Math.abs(game.venue_hr_factor - 100)) + '% ' + (game.venue_hr_factor >= 100 ? "more" : "fewer") +
+      ' home runs than a neutral park."><div class="v">' + game.venue_hr_factor + '</div><div class="k">HR factor</div></div>' : "";
 
     if (!hasWeather) {
       wrap.appendChild(el(
@@ -686,7 +715,7 @@
         '</svg>' +
         '<div class="wx-readout">' +
           '<div class="wx-headline">' + windHeadline(rel, speed) + '</div>' +
-          '<div class="wx-raw">' + speed + ' mph from the ' + escapeHtml(game.wind_dir_compass || "?") + ' (' + Math.round(game.wind_dir_deg) + '&deg; true)</div>' +
+          '<div class="wx-raw">' + (calm ? "Calm" : speed + ' mph') + '</div>' +
         '</div>' +
         '<div class="wx-tiles">' +
           '<div class="wx-tile"><div class="v">' + (game.temp_f !== null && game.temp_f !== undefined ? Math.round(game.temp_f) + '&deg;' : '–') + '</div><div class="k">Temp</div></div>' +

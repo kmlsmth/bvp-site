@@ -243,18 +243,20 @@
   .field-diagram .field-label { font-family: var(--font-mono); font-size: 9px; fill: var(--muted); text-anchor: middle; letter-spacing: 0.03em; }
   .field-diagram .plate { fill: var(--muted); }
   .field-diagram .wind-arrow { fill: var(--accent); }
-  .wx-readout { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .wx-readout { display: flex; flex-direction: column; gap: 3px; min-width: 0; justify-content: center; }
   .wx-headline { font-family: var(--font-display); font-size: 16.5px; font-weight: 600; line-height: 1.25; }
-  /* Only shown at all when the wind is notable -- color says which way it
-     leans at a glance: out = more carry (favors hitters), in = holds the
-     ball up (favors pitchers), cross mostly just shifts spray direction. */
-  .wx-headline.wind-out { color: var(--accent); }
-  .wx-headline.wind-in { color: var(--stitch); }
   .wx-raw { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
   .wx-divider { width: 1px; align-self: stretch; background: var(--line); flex-shrink: 0; }
   .wx-tiles { display: flex; gap: 24px; }
   .wx-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; }
   .wx-tile .v { font-family: var(--font-mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* Small arrow paired directly with the HR factor number when today's
+     wind is notable enough to matter -- out = more carry (favors
+     hitters), in = holds the ball up (favors pitchers). No separate
+     sentence/card real estate; the "i" on the label explains it. */
+  .wind-badge { font-size: 13px; vertical-align: 1px; }
+  .wind-badge.wind-out { color: var(--accent); }
+  .wind-badge.wind-in { color: var(--stitch); }
   .wx-tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: flex; align-items: center; gap: 4px; }
   .wx-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 2px; }
 
@@ -414,11 +416,17 @@
     "with no appearances in the last 7 days scores as fully Fresh. This " +
     "is a workload indicator, not a back-tested predictive stat.";
 
-  var HR_FACTOR_EXPLAINER = "Park factor for home runs. 100 = league " +
-    "average. A park at 110 sees about 10% more home runs than a " +
-    "neutral park; a park at 91 sees about 9% fewer. This is the park's " +
-    "season-long average -- it does NOT change with today's forecast. " +
-    "See the wind estimate above for today's game specifically.";
+  // windNote (optional): a sentence about today's wind, appended live so
+  // the one info icon on this tile explains both the season-long park
+  // number AND, when relevant, why the small arrow next to it is there --
+  // see windEffectNote() below, built from sourced carry-per-mph figures.
+  function hrFactorExplainer(windNote) {
+    var base = "Park factor for home runs. 100 = league average. A park " +
+      "at 110 sees about 10% more home runs than a neutral park; a park " +
+      "at 91 sees about 9% fewer. This is the park's season-long average " +
+      "-- it does NOT change with today's forecast.";
+    return windNote ? base + " " + windNote : base;
+  }
 
   // ---- Bullpen fatigue display helpers ----
   function fatigueClass(label) {
@@ -850,13 +858,14 @@
     return (toward - game.venue_azimuth_angle + 360) % 360;
   }
 
-  // A sentence describing the wind is only worth a reader's attention when
-  // it's blowing hard enough to plausibly matter -- the diagram's arrow
-  // already shows direction, for every game, regardless of speed, so a
-  // stray breeze doesn't need a caption too. Sourced, not guessed: under
-  // 8 mph is generally treated as noise for in-game decisions, and 15+
-  // mph is where multiple sources describe the effect on scoring as
-  // dramatic rather than incremental (see WIND_EXPLAINER for citations).
+  // The wind arrow next to HR factor (see windEffect() below) is only
+  // worth showing when it's blowing hard enough to plausibly matter --
+  // the diagram's arrow already shows direction, for every game,
+  // regardless of speed, so a stray breeze doesn't need a badge too.
+  // Sourced, not guessed: under 8 mph is generally treated as noise for
+  // in-game decisions, and 15+ mph is where multiple sources describe the
+  // effect on scoring as dramatic rather than incremental (see
+  // windEffectNote() for citations, surfaced via the HR factor tooltip).
   var NOTABLE_WIND_MPH = 8;
   var STRONG_WIND_MPH = 15;
 
@@ -876,22 +885,15 @@
   // reasonable estimate for a ball already near the fence, NOT a precise
   // per-batted-ball prediction -- exit velocity, launch angle,
   // temperature, and altitude all matter too, and this ignores all of
-  // them. Deliberately NOT folded into the park's HR factor number above,
-  // which is a season-long average and isn't the place to bolt an
-  // unverified single-game percentage onto -- this is shown as its own
-  // separate, clearly-labeled estimate instead.
+  // them. The park's HR factor number itself is deliberately left
+  // untouched -- it's a season-long average and there's no sourced
+  // feet-to-percent conversion to justify bolting a single-game number
+  // onto it -- but the two are now shown paired (arrow + tooltip right on
+  // the HR factor tile) rather than as a fully separate callout.
   var CARRY_FEET_PER_MPH = 3;
   function windCarryFeet(rel, speedMph) {
     return Math.round(speedMph * Math.cos(rel * Math.PI / 180) * CARRY_FEET_PER_MPH);
   }
-
-  var WIND_EXPLAINER = "Estimated extra (or lost) carry on a long fly " +
-    "ball from today's wind: about 3 ft per mph blowing with/against the " +
-    "hit line, based on published physics trajectory estimates (a pure " +
-    "crosswind adds roughly none). An approximation, not a per-pitch " +
-    "prediction -- exit velocity, launch angle, temperature, and " +
-    "altitude all matter too. Only shown at 8+ mph; below that, wind is " +
-    "treated as noise.";
 
   // Buckets mirror windHeadline's own: "out" tends to favor hitters (more
   // carry), "in" tends to favor pitchers (holds the ball up), "cross"
@@ -918,22 +920,36 @@
     return "Blowing straight out to center — carries fly balls";
   }
 
-  // The directional sentence plus the estimated carry number, e.g.
-  // "Blowing straight out to center — carries fly balls (~+22 ft of
-  // carry, strong wind)". The feet figure is omitted for a mostly-cross
-  // wind (small along-line component -- the sentence already says
-  // "across the field," and a +/-2 ft estimate would just be noise on
-  // top of noise), and "strong wind" is appended past the sourced 15 mph
-  // threshold since that's described as a qualitatively bigger effect,
-  // not just more of the same.
-  function windCalloutText(rel, speedMph) {
-    var text = windHeadline(rel);
+  // Paired display: rather than a standalone sentence + feet estimate
+  // (confusing on its own, and left the card with a lot of empty space
+  // on a calm day), today's wind shows up as a small colored arrow right
+  // next to the HR factor number -- out = ▲ (more carry), in = ▼ (holds
+  // the ball up) -- with the specifics in that tile's info tooltip
+  // instead of in the main layout. Nothing at all below NOTABLE_WIND_MPH
+  // or for a mostly-cross wind, same thresholds as before.
+  function windEffect(rel, speedMph) {
+    if (!speedMph || speedMph < NOTABLE_WIND_MPH) return null;
     var feet = windCarryFeet(rel, speedMph);
-    if (Math.abs(feet) >= 5) {
-      text += " (~" + (feet > 0 ? "+" : "") + feet + " ft of carry" +
-        (speedMph >= STRONG_WIND_MPH ? ", strong wind" : "") + ")";
-    }
-    return text;
+    if (Math.abs(feet) < 5) return null;
+    return { feet: feet, tone: windTone(rel), strong: speedMph >= STRONG_WIND_MPH };
+  }
+
+  function windBadgeHtml(effect) {
+    if (!effect) return "";
+    return ' <span class="wind-badge wind-' + effect.tone + '">' + (effect.feet > 0 ? "▲" : "▼") + '</span>';
+  }
+
+  // Folded into the HR factor tile's own tooltip (see hrFactorExplainer)
+  // rather than a separate citation block, now that there's no standalone
+  // wind sentence to hang it off of.
+  function windEffectNote(rel, effect) {
+    if (!effect) return "";
+    return "Today: " + windHeadline(rel) + " -- an estimated " +
+      (effect.feet > 0 ? "+" : "") + effect.feet + " ft of carry on a long " +
+      "fly ball" + (effect.strong ? " (strong wind)" : "") + ", on top of " +
+      "the park factor above (about 3 ft per mph along the hit line, from " +
+      "published physics trajectory estimates -- a pure crosswind adds " +
+      "roughly none; not a per-pitch prediction).";
   }
 
   function formatGameTimeEtPt(iso) {
@@ -974,10 +990,17 @@
       game.wind_dir_deg !== null && game.wind_dir_deg !== undefined &&
       game.venue_azimuth_angle !== null && game.venue_azimuth_angle !== undefined;
 
+    // Computed up front (even though the diagram/readout below only apply
+    // once hasWeather is confirmed) so the HR factor tile -- built next --
+    // can show today's wind arrow right alongside the park number.
+    var rel = hasWeather ? relativeWindDeg(game) : null;
+    var speed = hasWeather ? game.wind_speed_mph : null;
+    var effect = hasWeather ? windEffect(rel, speed) : null;
+
     var hasParkFactor = game.venue_hr_factor !== null && game.venue_hr_factor !== undefined;
     var parkFactorTile = hasParkFactor ?
-      '<div class="wx-tile"><div class="v">' + game.venue_hr_factor + '</div>' +
-      '<div class="k">HR factor ' + infoTip(HR_FACTOR_EXPLAINER) + '</div></div>' : "";
+      '<div class="wx-tile"><div class="v">' + game.venue_hr_factor + windBadgeHtml(effect) + '</div>' +
+      '<div class="k">HR factor ' + infoTip(hrFactorExplainer(windEffectNote(rel, effect))) + '</div></div>' : "";
 
     if (!hasWeather) {
       wrap.appendChild(el(
@@ -991,10 +1014,7 @@
       return wrap;
     }
 
-    var rel = relativeWindDeg(game);
-    var speed = game.wind_speed_mph;
     var calm = speed < 4;
-    var notable = !calm && speed >= NOTABLE_WIND_MPH;
 
     // Field diagram: home plate fixed at bottom, center field always "up" --
     // the diagram itself is oriented to the park, so the arrow's rotation
@@ -1029,7 +1049,6 @@
             arrowSvg +
           '</svg>' +
           '<div class="wx-readout">' +
-            (notable ? '<div class="wx-headline wind-' + windTone(rel) + '">' + windCalloutText(rel, speed) + ' ' + infoTip(WIND_EXPLAINER) + '</div>' : '') +
             '<div class="wx-raw">' + (calm ? "Calm" : speed + ' mph') + '</div>' +
           '</div>' +
         '</div>' +

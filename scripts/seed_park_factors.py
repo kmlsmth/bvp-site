@@ -71,6 +71,7 @@ PARK_FACTORS: dict[str, tuple[float, float]] = {
     "Minute Maid Park": (102, 100.3),
     "Daikin Park": (102, 100.3),  # Astros' park, renamed in 2025
     "Dodger Stadium": (110, 95.2),
+    "UNIQLO Field at Dodger Stadium": (110, 95.2),  # sponsorship rename, kept as an alias
     "American Family Field": (104, 97.1),
     "Nationals Park": (100, 99.4),
     "Citi Field": (99, 95.4),

@@ -348,18 +348,21 @@
   }
 
   // ---- Game view ----
-  function allPitchersForDate(games) {
+  // Only this game's own two probable starters -- the dropdown used to list
+  // every probable pitcher across the whole day's slate (so picking one from
+  // a different game would jump there), but that read as a bug when the
+  // "wrong" teams' pitchers showed up on a game page, so it's scoped to just
+  // this matchup now.
+  function pitchersForGame(g) {
     var list = [];
-    games.forEach(function (g) {
-      if (g.away_probable_pitcher_id) {
-        list.push({ gamePk: g.game_pk, id: g.away_probable_pitcher_id, name: g.away_probable_pitcher,
-          team: g.away_team, teamId: g.away_team_id, opp: g.home_team, oppId: g.home_team_id });
-      }
-      if (g.home_probable_pitcher_id) {
-        list.push({ gamePk: g.game_pk, id: g.home_probable_pitcher_id, name: g.home_probable_pitcher,
-          team: g.home_team, teamId: g.home_team_id, opp: g.away_team, oppId: g.away_team_id });
-      }
-    });
+    if (g.away_probable_pitcher_id) {
+      list.push({ gamePk: g.game_pk, id: g.away_probable_pitcher_id, name: g.away_probable_pitcher,
+        team: g.away_team, teamId: g.away_team_id, opp: g.home_team, oppId: g.home_team_id });
+    }
+    if (g.home_probable_pitcher_id) {
+      list.push({ gamePk: g.game_pk, id: g.home_probable_pitcher_id, name: g.home_probable_pitcher,
+        team: g.home_team, teamId: g.home_team_id, opp: g.away_team, oppId: g.away_team_id });
+    }
     return list;
   }
 
@@ -375,7 +378,7 @@
         app.appendChild(el('<div class="empty-day">Couldn’t find that game for ' + escapeHtml(date) + '.</div>'));
         return;
       }
-      var pitchers = allPitchersForDate(games);
+      var pitchers = pitchersForGame(game);
       var startPitcherId = pitcherId || game.away_probable_pitcher_id || game.home_probable_pitcher_id || null;
       renderGame(game, pitchers, startPitcherId);
     }).catch(function () {

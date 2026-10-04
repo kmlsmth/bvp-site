@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sys
 import time
+import traceback
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -48,7 +49,9 @@ def backfill_team_appearances(conn, team_id: int, as_of_date: str,
     try:
         raw = mlb_api.get_team_schedule_range(team_id, start, end)
     except Exception as exc:
-        print(f"    appearances: couldn't fetch schedule for team {team_id}: {exc}")
+        print(f"    appearances: couldn't fetch schedule for team {team_id} "
+              f"({start}..{end}): {exc!r}")
+        traceback.print_exc()
         return 0
 
     games = parsing.parse_schedule(raw)
@@ -64,16 +67,30 @@ def backfill_team_appearances(conn, team_id: int, as_of_date: str,
         try:
             box_raw = mlb_api.get_boxscore(game_pk)
         except Exception as exc:
-            print(f"    appearances: couldn't fetch boxscore for game {game_pk}: {exc}")
+            print(f"    appearances: couldn't fetch boxscore for game {game_pk}: {exc!r}")
+            traceback.print_exc()
             continue
 
         rows = parsing.parse_boxscore(box_raw, game_pk, game["game_date"])
+        if not rows:
+            # A "Final" game with zero parsed pitcher rows is unexpected --
+            # either the box score's per-player stats block is empty/shaped
+            # differently than parse_boxscore assumes, or every player on
+            # both sides genuinely has no "pitching" stats (shouldn't
+            # happen for a completed game). Surfacing this explicitly
+            # since it would otherwise look identical to "nothing to do"
+            # and this exact game will simply be retried next hour.
+            print(f"    appearances: game {game_pk} (status={status!r}) parsed "
+                  f"to 0 pitcher rows -- not recording, will retry next run")
+            continue
+
         for row in rows:
             db.upsert_player(conn, row["pitcher_id"], row["pitcher_name"],
                               role="pitcher", team_id=row["team_id"])
             db.upsert_pitcher_appearance(conn, row)
         conn.commit()
         fetched += 1
+        print(f"    appearances: game {game_pk} -> {len(rows)} pitcher row(s) stored")
         time.sleep(REQUEST_PAUSE_SECONDS)
 
     return fetched

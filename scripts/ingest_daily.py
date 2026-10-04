@@ -141,8 +141,6 @@ def refresh_probable_pitchers(target_date: str) -> int:
 
         for game in games:
             status = (game.get("status") or "").strip().lower()
-            if status in ingest_appearances._COMPLETED_STATUSES:
-                continue  # nothing left to announce for a finished game
 
             existing = conn.execute(
                 "SELECT home_probable_pitcher_id, away_probable_pitcher_id "
@@ -154,6 +152,21 @@ def refresh_probable_pitchers(target_date: str) -> int:
 
             db.upsert_team(conn, game["home_team_id"], game["home_team_name"])
             db.upsert_team(conn, game["away_team_id"], game["away_team_name"])
+
+            # Bullpen fatigue/recent-form backfill every hour for both of
+            # today's teams, regardless of whether a pitcher was just
+            # announced -- this used to only fire the first time a team's
+            # pitcher got set for the day, which meant a team whose
+            # starter was announced hours before anyone noticed a backfill
+            # problem would never get retried for the rest of the day.
+            # backfill_team_appearances is cheap and idempotent (it skips
+            # any game already stored), so doing this every hour for every
+            # team playing today is a self-healing retry, not wasted work.
+            ingest_appearances.backfill_team_appearances(conn, game["home_team_id"], target_date)
+            ingest_appearances.backfill_team_appearances(conn, game["away_team_id"], target_date)
+
+            if status in ingest_appearances._COMPLETED_STATUSES:
+                continue  # nothing left to announce for a finished game
 
             home_pitcher = game["home_probable_pitcher_id"]
             away_pitcher = game["away_probable_pitcher_id"]
@@ -174,13 +187,11 @@ def refresh_probable_pitchers(target_date: str) -> int:
                       f"(game {game['game_pk']})")
                 newly_found += 1
                 new_pairs += _pairs_for_pitcher(conn, home_pitcher, game["away_team_id"])
-                ingest_appearances.backfill_team_appearances(conn, game["home_team_id"], target_date)
             if away_pitcher is not None and away_pitcher != had_away:
                 print(f"    newly announced: {game['away_probable_pitcher_name']} "
                       f"(game {game['game_pk']})")
                 newly_found += 1
                 new_pairs += _pairs_for_pitcher(conn, away_pitcher, game["home_team_id"])
-                ingest_appearances.backfill_team_appearances(conn, game["away_team_id"], target_date)
 
             for batter_id, pitcher_id in new_pairs:
                 _ingest_matchup(conn, batter_id, pitcher_id)

@@ -1,0 +1,1054 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>At the Plate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: homepage list of a day's games -> a game page with a weather
+     card and a batter-vs-pitcher stat table. A "viewing lineup vs." dropdown
+     at the top of the table lists every probable starter in that day's
+     full slate, not just this game's two -- picking one jumps straight to
+     that pitcher's own game page. The lineup table shows the full stat
+     line (matching the old dailybaseballdata.com column set) in a
+     horizontally-scrolling table, with a team-totals row at the bottom. */
+  :root {
+    --bg: #f6f3ea; --surface: #ffffff; --surface-2: #efebdf;
+    --ink: #1b2018; --muted: #666f63; --line: #dedacb;
+    --accent: #2f6f4f; --accent-ink: #ffffff; --accent-soft: #e4efe7;
+    --stitch: #a8393a;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14170f; --surface: #1c2016; --surface-2: #232819;
+      --ink: #eef0e7; --muted: #9aa392; --line: #333a28;
+      --accent: #5fa47c; --accent-ink: #0c140f; --accent-soft: #1f2e22;
+      --stitch: #d4716b; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14170f; --surface: #1c2016; --surface-2: #232819;
+    --ink: #eef0e7; --muted: #9aa392; --line: #333a28;
+    --accent: #5fa47c; --accent-ink: #0c140f; --accent-soft: #1f2e22;
+    --stitch: #d4716b; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 28px 16px 64px; display: flex; flex-direction: column; gap: 20px; }
+  /* Flex items default to a minimum width based on their content's own
+     intrinsic size, not 0 -- so the BVP table below (deliberately
+     min-width: 860px so its columns don't get crushed, meant to scroll
+     horizontally inside its own .table-scroll box) was instead forcing
+     this whole flex column wider than the phone's screen. Some mobile
+     browsers respond to that by zooming the entire page out to fit,
+     which is what actually made everything look like it was floating in
+     a half-used screen with empty space on the right -- not a layout
+     choice, a viewport-width bug. min-width: 0 opts every direct child
+     back into normal shrink-to-fit behavior. */
+  .wrap > * { min-width: 0; }
+
+  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: var(--font-display); font-weight: 600; font-size: 32px; line-height: 1.08; margin: 0; text-wrap: balance; }
+  .sub { color: var(--muted); font-size: 14.5px; max-width: 60ch; }
+  .loading { font-size: 13px; color: var(--muted); font-family: var(--font-mono); padding: 4px 0; }
+
+  /* ---- Home: list of games ---- */
+  .game-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 18px; cursor: pointer; text-align: left; width: 100%;
+    font-family: inherit; color: inherit;
+  }
+  .game-row:hover { border-color: var(--accent); }
+  .game-row .matchup-name { font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+  .game-row .matchup-name .at { color: var(--muted); font-style: italic; font-weight: 500; padding: 0 4px; }
+  .game-row .pitchers-line { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .game-row .chev { flex-shrink: 0; width: 18px; height: 18px; color: var(--muted); transform: rotate(-90deg); }
+  .games-list { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ---- Bullpen fatigue badges (schedule list + game page) ---- */
+  .bullpen-badges { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+  .bp-badge { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 5px; }
+  .bp-badge .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .bp-fresh .dot { background: var(--accent); }
+  .bp-moderate .dot { background: var(--muted); }
+  .bp-taxed .dot { background: var(--stitch); opacity: 0.7; }
+  .bp-exhausted .dot { background: var(--stitch); }
+  .bp-fresh, .bp-moderate { color: var(--muted); }
+  .bp-taxed, .bp-exhausted { color: var(--stitch); }
+
+  /* ---- Info tip: a small tappable "i" with a floating explanation.
+     Native title="" tooltips don't fire on touch devices at all, which is
+     most of this site's real-world traffic -- so this is a tiny custom
+     component instead: shows on hover (desktop) AND on tap (mobile, via
+     a "show" class toggled in JS), and a document-level click handler
+     closes it again on a tap elsewhere. ---- */
+  .info-tip { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; line-height: 1; cursor: pointer; position: relative; flex-shrink: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  /* The bubble itself is appended to <body> and positioned in JS (see
+     positionInfoTip below), NOT a CSS ::after on the button -- several
+     places this is used (the bullpen fatigue pill, in particular) sit
+     inside a card with overflow:hidden for its rounded corners, which
+     silently clipped an ::after-based tooltip trying to float above it. */
+  .info-tip-bubble { position: fixed; background: var(--ink); color: var(--bg); font-family: var(--font-body); font-size: 11.5px; font-weight: 400; line-height: 1.4; padding: 9px 11px; border-radius: 9px; white-space: normal; text-align: left; opacity: 0; visibility: hidden; transition: opacity 0.12s; box-shadow: 0 6px 18px rgba(0,0,0,0.2); z-index: 1000; pointer-events: none; }
+  .info-tip-bubble.show { opacity: 1; visibility: visible; }
+
+  /* ---- Bullpen Watch card (game page) ---- */
+  .bullpen-cards { display: flex; flex-direction: column; gap: 10px; }
+  .bullpen-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .bullpen-card-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; }
+  .bullpen-card-head:hover { background: var(--surface-2); }
+  .bullpen-head-main { flex: 1 1 auto; min-width: 0; }
+  .bullpen-team-name { font-family: var(--font-display); font-size: 15.5px; font-weight: 600; }
+  .bullpen-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .fatigue-pill { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: var(--font-mono); font-size: 13px; font-weight: 600; letter-spacing: 0.01em; padding: 6px 10px; border-radius: 999px; }
+  .fatigue-pill .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .fatigue-pill.bp-fresh { background: var(--accent-soft); color: var(--accent); }
+  .fatigue-pill.bp-fresh .dot { background: var(--accent); }
+  .fatigue-pill.bp-moderate { background: var(--surface-2); color: var(--ink); }
+  .fatigue-pill.bp-moderate .dot { background: var(--muted); }
+  .fatigue-pill.bp-taxed, .fatigue-pill.bp-exhausted { background: var(--stitch); color: var(--accent-ink); }
+  .fatigue-pill.bp-taxed { opacity: 0.85; }
+  .fatigue-pill.bp-taxed .dot, .fatigue-pill.bp-exhausted .dot { background: var(--accent-ink); }
+  .fatigue-pill .info-tip { background: rgba(0,0,0,0.12); border-color: transparent; color: inherit; }
+  .fatigue-pill.bp-fresh .info-tip, .fatigue-pill.bp-moderate .info-tip { background: rgba(0,0,0,0.08); }
+  .bullpen-card-body { border-top: 1px solid var(--line); padding: 10px 16px 14px; display: none; }
+  .bullpen-card.expanded .bullpen-card-body { display: block; }
+  .bullpen-card-body table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bullpen-card-body th { text-align: right; font-size: 10px; text-transform: uppercase; color: var(--muted); padding: 4px 6px; font-weight: 600; }
+  .bullpen-card-body th:first-child, .bullpen-card-body td:first-child { text-align: left; }
+  .bullpen-card-body td { text-align: right; padding: 4px 6px; font-family: var(--font-mono); }
+  .bullpen-card-body td:first-child { font-family: var(--font-body); }
+  .bullpen-card-chev { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; transition: transform 0.15s; }
+  .bullpen-card.expanded .bullpen-card-chev { transform: rotate(180deg); }
+  .recent-form-note { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+  /* ---- Starting lineups (game page) ---- */
+  /* Side-by-side on every width, phones included -- two narrower columns
+     of 9 short lines each fit comfortably, and stacking them full-width
+     only made you scroll twice as far for the same information. */
+  .lineups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .lineup-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+  .lineup-card .bullpen-team-name { margin-bottom: 2px; }
+  .lineup-card .lineup-sp { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  .lineup-card .lineup-sp strong { color: var(--ink); font-weight: 600; }
+  .lineup-card ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .lineup-card li { display: flex; align-items: baseline; gap: 7px; font-size: 13.5px; min-width: 0; }
+  .lineup-order { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); width: 13px; flex-shrink: 0; text-align: right; }
+  .lineup-pos { font-family: var(--font-mono); font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .lineup-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 420px) {
+    .lineup-card { padding: 12px 10px; }
+    .lineup-card .bullpen-team-name { font-size: 14px; }
+    .lineup-card li { font-size: 12.5px; gap: 5px; }
+  }
+
+  .empty-day { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+  .date-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .date-row input[type="date"] { font-family: var(--font-mono); font-size: 14px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 10px; }
+  .today-btn { font-family: var(--font-body); font-size: 13px; font-weight: 500; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  .today-btn:hover { border-color: var(--accent); }
+
+  /* ---- Game page ---- */
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500; color: var(--muted);
+    background: none; border: none; cursor: pointer; padding: 0; font-family: inherit;
+    align-self: flex-start;
+  }
+  .back-link:hover { color: var(--accent); }
+
+  /* ---- Matchup card (game page header): a boxed, centered summary like
+     the rest of the page's cards, instead of a bare page title floating
+     on the background -- team names, then game time and probable
+     pitchers/venue underneath. ---- */
+  .matchup-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px 20px; text-align: center; }
+  .matchup-teams { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 0; }
+  .matchup-team-name { font-family: var(--font-display); font-weight: 600; font-size: 23px; line-height: 1.15; text-wrap: balance; }
+  .matchup-at { font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 15px; color: var(--muted); flex-shrink: 0; }
+  .matchup-time { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); margin-top: 12px; }
+  .matchup-sub { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
+  @media (max-width: 480px) {
+    .matchup-team-name { font-size: 18px; }
+    .matchup-teams { gap: 8px; }
+  }
+
+  .section-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 4px 2px -4px; }
+  .tabs-note { font-size: 12px; color: var(--muted); font-style: italic; }
+
+  /* ---- BVP tab: pitcher switcher + full stat table ---- */
+  .pitcher-switch {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .pitcher-switch label { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  .pitcher-switch select {
+    flex: 1; min-width: 200px;
+    font-family: var(--font-body); font-size: 14.5px; font-weight: 500; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .lineup-caption { font-size: 13px; color: var(--muted); margin: 2px 2px 0; }
+  .lineup-caption strong { color: var(--ink); }
+
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  table.lineup { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 860px; }
+  table.lineup thead th {
+    text-align: right; font-size: 10px; letter-spacing: 0.03em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding: 8px 9px; border-bottom: 1px solid var(--line);
+    background: var(--surface-2); position: sticky; top: 0;
+  }
+  table.lineup thead th:first-child { text-align: left; position: sticky; left: 0; z-index: 1; }
+  table.lineup tbody td {
+    text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    padding: 9px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface);
+  }
+  table.lineup tbody td:first-child {
+    font-family: var(--font-body); white-space: normal; text-align: left;
+    position: sticky; left: 0; background: var(--surface);
+  }
+  table.lineup tbody tr:nth-child(even) td { background: var(--surface-2); }
+  table.lineup tbody tr:nth-child(even) td:first-child { background: var(--surface-2); }
+  table.lineup tbody tr:last-child td { border-bottom: none; }
+  table.lineup .ops-cell, table.lineup .woba-cell { font-weight: 600; }
+  table.lineup .hot { color: var(--accent); }
+  table.lineup .cold { color: var(--stitch); }
+  table.lineup tfoot td {
+    font-weight: 600; padding: 10px 9px; border-top: 2px solid var(--line);
+    background: var(--accent-soft); font-family: var(--font-mono); text-align: right;
+  }
+  table.lineup tfoot td:first-child { text-align: left; font-family: var(--font-body); position: sticky; left: 0; background: var(--accent-soft); }
+
+  .no-history-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 2px 2px; }
+
+  /* ---- Weather: lives right on the matchup page, field-relative arrow ----
+     Laid out as two halves of one card (wind description | stat tiles)
+     split by a vertical rule, so it reads as one coherent panel instead of
+     a diagram and some numbers that happened to wrap onto the same line. */
+  .weather-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .wx-main { display: flex; align-items: center; gap: 18px; flex: 1 1 260px; min-width: 0; }
+  .field-diagram { width: 104px; height: 90px; flex-shrink: 0; }
+  .field-diagram .wedge { fill: var(--surface-2); stroke: none; }
+  .field-diagram .foul-line { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .field-diagram .arc { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .field-diagram .field-label { font-family: var(--font-mono); font-size: 9px; fill: var(--muted); text-anchor: middle; letter-spacing: 0.03em; }
+  .field-diagram .plate { fill: var(--muted); }
+  .field-diagram .wind-arrow { fill: var(--accent); }
+  .wx-readout { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .wx-headline { font-family: var(--font-display); font-size: 16.5px; font-weight: 600; line-height: 1.25; }
+  /* Only shown at all when the wind is notable -- color says which way it
+     leans at a glance: out = more carry (favors hitters), in = holds the
+     ball up (favors pitchers), cross mostly just shifts spray direction. */
+  .wx-headline.wind-out { color: var(--accent); }
+  .wx-headline.wind-in { color: var(--stitch); }
+  .wx-raw { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
+  .wx-divider { width: 1px; align-self: stretch; background: var(--line); flex-shrink: 0; }
+  .wx-tiles { display: flex; gap: 24px; }
+  .wx-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .wx-tile .v { font-family: var(--font-mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .wx-tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+  .wx-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  @media (max-width: 560px) {
+    .wx-divider { display: none; }
+    .weather-card { gap: 16px; }
+    .wx-tiles { width: 100%; justify-content: space-between; gap: 10px; }
+  }
+
+  @media (max-width: 420px) {
+    h1 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var app = document.getElementById("app");
+  var gamesCache = {};           // date (YYYY-MM-DD) -> Promise of games array
+  var currentDate = todayISO();
+
+  function todayISO() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+
+  function el(html) {
+    var wrapper = document.createElement("div");
+    wrapper.innerHTML = html.trim();
+    return wrapper.firstElementChild;
+  }
+
+  function escapeHtml(s) {
+    if (s === null || s === undefined) return "";
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function cellValue(stats, key) {
+    var v = stats ? stats[key] : null;
+    return (v === null || v === undefined) ? "–" : v;
+  }
+
+  // ---- API calls ----
+  function fetchGames(date) {
+    if (!gamesCache[date]) {
+      gamesCache[date] = fetch("/api/games?date=" + encodeURIComponent(date))
+        .then(function (r) { if (!r.ok) throw new Error("games request failed"); return r.json(); })
+        .catch(function (err) { delete gamesCache[date]; throw err; });
+    }
+    return gamesCache[date];
+  }
+
+  function fetchLineup(pitcherId, opponentTeamId) {
+    return fetch("/api/lineup?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId)
+      .then(function (r) { if (!r.ok) throw new Error("lineup request failed"); return r.json(); });
+  }
+
+  function fetchBullpen(teamId, date) {
+    return fetch("/api/bullpen?team=" + teamId + "&date=" + encodeURIComponent(date))
+      .then(function (r) { if (!r.ok) throw new Error("bullpen request failed"); return r.json(); });
+  }
+
+  // ---- Info tip: small tappable "i" with a floating plain-language
+  // explanation, used anywhere a number on this site needs a "what does
+  // that mean" (HR factor, bullpen fatigue). Click/tap toggles it (works
+  // on touch, unlike a native title="" tooltip); hover/focus shows it on
+  // desktop. The bubble is a single shared element appended to <body> and
+  // positioned in JS with getBoundingClientRect -- NOT a CSS ::after on
+  // the button -- because several spots this is used (the bullpen fatigue
+  // pill, in particular) sit inside a card with overflow:hidden for its
+  // rounded corners, which silently clipped an ::after-based tooltip
+  // trying to float above its own button.
+  function infoTip(text) {
+    return '<button type="button" class="info-tip" data-tip="' + escapeHtml(text) +
+      '" aria-label="More info">i</button>';
+  }
+
+  var tipBubble = null;
+  function getTipBubble() {
+    if (!tipBubble) {
+      tipBubble = document.createElement("div");
+      tipBubble.className = "info-tip-bubble";
+      document.body.appendChild(tipBubble);
+    }
+    return tipBubble;
+  }
+
+  var activeTip = null;
+
+  function showInfoTip(btn) {
+    var bubble = getTipBubble();
+    bubble.textContent = btn.getAttribute("data-tip");
+    var bubbleWidth = Math.min(220, window.innerWidth - 24);
+    bubble.style.width = bubbleWidth + "px";
+    bubble.classList.add("show");
+
+    var rect = btn.getBoundingClientRect();
+    var bubbleRect = bubble.getBoundingClientRect();
+    var left = rect.left + rect.width / 2 - bubbleRect.width / 2;
+    left = Math.max(10, Math.min(left, window.innerWidth - bubbleRect.width - 10));
+    // Prefer floating above the button; if there isn't room (the button is
+    // near the top of the viewport -- the fatigue pill often is, since the
+    // Bullpen Watch cards start right at the top of the page on mobile),
+    // flip to below it instead of letting the bubble run off-screen.
+    var top = rect.top - bubbleRect.height - 8;
+    if (top < 8) top = rect.bottom + 8;
+    bubble.style.left = left + "px";
+    bubble.style.top = top + "px";
+  }
+
+  function hideInfoTip() {
+    if (tipBubble) tipBubble.classList.remove("show");
+    if (activeTip) activeTip.classList.remove("tip-active");
+    activeTip = null;
+  }
+
+  document.addEventListener("click", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (!tip) { hideInfoTip(); return; }
+    e.preventDefault();
+    if (activeTip === tip) { hideInfoTip(); return; }
+    if (activeTip) activeTip.classList.remove("tip-active");
+    activeTip = tip;
+    tip.classList.add("tip-active");
+    showInfoTip(tip);
+  });
+  document.addEventListener("mouseover", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip && tip !== activeTip) showInfoTip(tip);
+  });
+  document.addEventListener("mouseout", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip && tip !== activeTip && !tip.contains(e.relatedTarget)) hideInfoTip();
+  });
+  document.addEventListener("focusin", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip) showInfoTip(tip);
+  });
+  document.addEventListener("focusout", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip && tip !== activeTip) hideInfoTip();
+  });
+  window.addEventListener("scroll", hideInfoTip, true);
+  window.addEventListener("resize", hideInfoTip);
+
+  var FATIGUE_EXPLAINER = "How taxed a bullpen is, 0-100: 70% based on " +
+    "pitches thrown in the past 7 days vs. the league average for that " +
+    "week, 30% based on how recently each reliever last pitched. A team " +
+    "with no appearances in the last 7 days scores as fully Fresh. This " +
+    "is a workload indicator, not a back-tested predictive stat.";
+
+  var HR_FACTOR_EXPLAINER = "Park factor for home runs. 100 = league " +
+    "average. A park at 110 sees about 10% more home runs than a " +
+    "neutral park; a park at 91 sees about 9% fewer. This is the park's " +
+    "season-long average -- it does NOT change with today's forecast. " +
+    "See the wind estimate above for today's game specifically.";
+
+  // ---- Bullpen fatigue display helpers ----
+  function fatigueClass(label) {
+    return "bp-" + String(label || "fresh").toLowerCase();
+  }
+
+  function bullpenBadgesHtml(g) {
+    var parts = [];
+    [["away", g.away_team, g.away_bullpen_fatigue], ["home", g.home_team, g.home_bullpen_fatigue]].forEach(function (t) {
+      var fatigue = t[2];
+      if (!fatigue) return;
+      parts.push(
+        '<span class="bp-badge ' + fatigueClass(fatigue.label) + '"><span class="dot"></span>' +
+        escapeHtml(t[1]) + ' bullpen: ' + escapeHtml(fatigue.label) + '</span>'
+      );
+    });
+    return parts.length ? '<div class="bullpen-badges">' + parts.join("") + '</div>' : "";
+  }
+
+  function recentFormText(form) {
+    if (!form || !form.starts_counted) return "";
+    return '<span class="recent-form-note">Last ' + form.starts_counted +
+      ' start' + (form.starts_counted === 1 ? "" : "s") + ': ' +
+      form.era + ' ERA &middot; ' + form.whip + ' WHIP &middot; ' + form.k9 + ' K/9</span>';
+  }
+
+  // ---- Routing: "#/" = home, "#/game/<date>/<gamePk>/<pitcherId?>" = game page ----
+  function route() {
+    var hash = location.hash.replace(/^#\/?/, "");
+    var parts = hash.split("/").filter(Boolean);
+    if (parts[0] === "game" && parts[1] && parts[2]) {
+      currentDate = parts[1];
+      renderGameRoute(parts[1], parseInt(parts[2], 10), parts[3] ? parseInt(parts[3], 10) : null);
+    } else {
+      renderHome();
+    }
+  }
+  window.addEventListener("hashchange", route);
+
+  // ---- Home view ----
+  function renderHome() {
+    app.innerHTML = "";
+    var header = el(
+      '<header style="display:flex;flex-direction:column;gap:14px">' +
+        '<div class="eyebrow">At the plate</div>' +
+        '<h1>Today’s Games</h1>' +
+        '<p class="sub">Pick a game to see the batter-vs-pitcher breakdown and game-time wind conditions.</p>' +
+        '<div class="date-row">' +
+          '<input type="date" id="date-input" value="' + currentDate + '">' +
+          '<button class="today-btn" id="today-btn" type="button">Today</button>' +
+        '</div>' +
+      '</header>'
+    );
+    app.appendChild(header);
+    var listHost = el('<div class="games-list"><div class="loading">Loading today’s games&hellip;</div></div>');
+    app.appendChild(listHost);
+
+    document.getElementById("date-input").addEventListener("change", function (e) {
+      currentDate = e.target.value;
+      loadGamesInto(listHost);
+    });
+    document.getElementById("today-btn").addEventListener("click", function () {
+      currentDate = todayISO();
+      document.getElementById("date-input").value = currentDate;
+      loadGamesInto(listHost);
+    });
+    loadGamesInto(listHost);
+  }
+
+  function pitchersLineText(g) {
+    if (g.away_probable_pitcher && g.home_probable_pitcher) {
+      return escapeHtml(g.away_probable_pitcher) + " vs " + escapeHtml(g.home_probable_pitcher);
+    }
+    if (g.away_probable_pitcher || g.home_probable_pitcher) {
+      return escapeHtml(g.away_probable_pitcher || g.home_probable_pitcher) + " probable";
+    }
+    return "Probable pitchers not yet announced";
+  }
+
+  function loadGamesInto(host) {
+    host.innerHTML = '<div class="loading">Loading today’s games&hellip;</div>';
+    fetchGames(currentDate).then(function (games) {
+      host.innerHTML = "";
+      if (!games.length) {
+        host.appendChild(el('<div class="empty-day">No games on this date.</div>'));
+        return;
+      }
+      games.slice().sort(function (a, b) {
+        return (a.game_date_time || "").localeCompare(b.game_date_time || "");
+      }).forEach(function (g) {
+        var row = el(
+          '<button type="button" class="game-row">' +
+            '<div>' +
+              '<div class="matchup-name">' + escapeHtml(g.away_team) + '<span class="at">at</span>' + escapeHtml(g.home_team) + '</div>' +
+              '<div class="pitchers-line">' + pitchersLineText(g) + ' &middot; ' + escapeHtml(g.venue_name || "Venue TBD") + '</div>' +
+              bullpenBadgesHtml(g) +
+            '</div>' +
+            '<svg class="chev" viewBox="0 0 20 20" fill="none"><path d="M5 7.5 10 13 15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          '</button>'
+        );
+        row.addEventListener("click", function () {
+          var startId = g.away_probable_pitcher_id || g.home_probable_pitcher_id || "";
+          location.hash = "#/game/" + currentDate + "/" + g.game_pk + (startId ? "/" + startId : "");
+        });
+        host.appendChild(row);
+      });
+    }).catch(function () {
+      host.innerHTML = '<div class="empty-day">Couldn’t load games right now. Try reloading the page.</div>';
+    });
+  }
+
+  // ---- Game view ----
+  // Only this game's own two probable starters -- the dropdown used to list
+  // every probable pitcher across the whole day's slate (so picking one from
+  // a different game would jump there), but that read as a bug when the
+  // "wrong" teams' pitchers showed up on a game page, so it's scoped to just
+  // this matchup now.
+  function pitchersForGame(g) {
+    var list = [];
+    if (g.away_probable_pitcher_id) {
+      list.push({ gamePk: g.game_pk, id: g.away_probable_pitcher_id, name: g.away_probable_pitcher,
+        team: g.away_team, teamId: g.away_team_id, opp: g.home_team, oppId: g.home_team_id });
+    }
+    if (g.home_probable_pitcher_id) {
+      list.push({ gamePk: g.game_pk, id: g.home_probable_pitcher_id, name: g.home_probable_pitcher,
+        team: g.home_team, teamId: g.home_team_id, opp: g.away_team, oppId: g.away_team_id });
+    }
+    return list;
+  }
+
+  function renderGameRoute(date, gamePk, pitcherId) {
+    app.innerHTML = '<div class="loading">Loading game&hellip;</div>';
+    fetchGames(date).then(function (games) {
+      var game = games.filter(function (g) { return g.game_pk === gamePk; })[0];
+      if (!game) {
+        app.innerHTML = "";
+        var back = el('<button type="button" class="back-link">&larr; All games</button>');
+        back.addEventListener("click", function () { location.hash = "#/"; });
+        app.appendChild(back);
+        app.appendChild(el('<div class="empty-day">Couldn’t find that game for ' + escapeHtml(date) + '.</div>'));
+        return;
+      }
+      var pitchers = pitchersForGame(game);
+      var startPitcherId = pitcherId || game.away_probable_pitcher_id || game.home_probable_pitcher_id || null;
+      renderGame(game, pitchers, startPitcherId);
+    }).catch(function () {
+      app.innerHTML = '<div class="empty-day">Couldn’t load this game right now. Try reloading the page.</div>';
+    });
+  }
+
+  function renderGame(game, pitchers, startPitcherId) {
+    app.innerHTML = "";
+
+    var back = el('<button type="button" class="back-link">&larr; All games</button>');
+    back.addEventListener("click", function () { location.hash = "#/"; });
+    app.appendChild(back);
+
+    var gameTime = formatGameTimeEtPt(game.game_date_time);
+
+    app.appendChild(el(
+      '<div class="matchup-card">' +
+        '<h1 class="matchup-teams">' +
+          '<span class="matchup-team-name">' + escapeHtml(game.away_team) + '</span>' +
+          '<span class="matchup-at">@</span>' +
+          '<span class="matchup-team-name">' + escapeHtml(game.home_team) + '</span>' +
+        '</h1>' +
+        (gameTime ? '<div class="matchup-time">' + gameTime + '</div>' : "") +
+        '<div class="matchup-sub">' + pitchersLineText(game) + ' &middot; ' + escapeHtml(game.venue_name || "Venue TBD") + '</div>' +
+      '</div>'
+    ));
+
+    app.appendChild(el('<div class="section-label">Weather</div>'));
+    app.appendChild(renderWeatherCard(game));
+
+    app.appendChild(el('<div class="section-label">Batter vs. Pitcher</div>'));
+    if (!pitchers.length) {
+      app.appendChild(el('<div class="empty-day">No probable pitchers announced yet for this date.</div>'));
+    } else {
+      app.appendChild(renderBvpSection(game, pitchers, startPitcherId));
+    }
+
+    app.appendChild(el('<div class="section-label">Starting Lineups</div>'));
+    app.appendChild(renderLineupsSection(game));
+
+    app.appendChild(el('<div class="section-label">Bullpen Watch</div>'));
+    app.appendChild(renderBullpenSection(game));
+
+    app.appendChild(el('<p class="tabs-note">More planned here — lineup confirmations and market data.</p>'));
+  }
+
+  function fatigueSummaryText(fatigue) {
+    if (!fatigue) return "Loading&hellip;";
+    return fatigue.weekly_pitches + ' pitches over the last ' + BULLPEN_WINDOW_DAYS + ' days' +
+      ' &middot; ' + fatigue.relievers_used + ' reliever' + (fatigue.relievers_used === 1 ? "" : "s") + ' used';
+  }
+
+  // The headline number -- shown prominently in its own colored pill in
+  // the card head, not buried in the smaller meta line below, since this
+  // is usually the one thing someone glances at this card for.
+  function fatiguePillHtml(fatigue) {
+    if (!fatigue) return '<span class="fatigue-pill bp-moderate">&hellip;</span>';
+    return '<span class="fatigue-pill ' + fatigueClass(fatigue.label) + '">' +
+      '<span class="dot"></span>' + escapeHtml(fatigue.label) + ' ' + fatigue.score +
+      infoTip(FATIGUE_EXPLAINER) + '</span>';
+  }
+
+  // ---- Starting lineups ----
+  // MLB's confirmed batting order once they've submitted it -- usually
+  // posted 1-3 hours before first pitch, not an early guess/projection
+  // (the public API doesn't offer a "likely lineup" ahead of that), so
+  // this says "not announced yet" rather than implying a projection.
+  function lineupCardHtml(teamName, lineup, probablePitcher) {
+    var spLine = '<div class="lineup-sp">Projected SP: ' +
+      (probablePitcher ? '<strong>' + escapeHtml(probablePitcher) + '</strong>' : 'Not yet announced') +
+      '</div>';
+    if (!lineup || !lineup.length) {
+      return '<div class="lineup-card"><div class="bullpen-team-name">' + escapeHtml(teamName) + '</div>' +
+        spLine +
+        '<div class="no-history-note">Lineup not announced yet.</div></div>';
+    }
+    var items = lineup.map(function (p) {
+      return '<li><span class="lineup-order">' + p.order + '</span>' +
+        '<span class="lineup-pos">' + escapeHtml(p.position || "") + '</span>' +
+        '<span class="lineup-name">' + escapeHtml(p.name || "") + '</span></li>';
+    }).join("");
+    return '<div class="lineup-card"><div class="bullpen-team-name">' + escapeHtml(teamName) + '</div>' +
+      spLine +
+      '<ol>' + items + '</ol></div>';
+  }
+
+  // Each card leads with that team's own probable starter, then its
+  // batting order underneath -- same pairing as the "starter, then
+  // lineup below it" sidebar pattern Kamil pointed to, just as its own
+  // card per team instead of a shared sidebar.
+  function renderLineupsSection(game) {
+    return el(
+      '<div class="lineups-grid">' +
+        lineupCardHtml(game.away_team, game.away_lineup, game.away_probable_pitcher) +
+        lineupCardHtml(game.home_team, game.home_lineup, game.home_probable_pitcher) +
+      '</div>'
+    );
+  }
+
+  var BULLPEN_WINDOW_DAYS = 7;
+
+  function renderBullpenSection(game) {
+    var wrap = el('<div class="bullpen-cards"></div>');
+
+    [
+      { teamId: game.away_team_id, teamName: game.away_team },
+      { teamId: game.home_team_id, teamName: game.home_team }
+    ].forEach(function (t) {
+      if (!t.teamId) return;
+      var card = el(
+        '<div class="bullpen-card">' +
+          '<div class="bullpen-card-head">' +
+            '<div class="bullpen-head-main"><div class="bullpen-team-name">' + escapeHtml(t.teamName) + '</div>' +
+            '<div class="bullpen-meta">Loading&hellip;</div></div>' +
+            '<span class="fatigue-pill-slot">' + fatiguePillHtml(null) + '</span>' +
+            '<svg class="bullpen-card-chev" viewBox="0 0 20 20" fill="none"><path d="M5 7.5 10 13 15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          '</div>' +
+          '<div class="bullpen-card-body"><div class="loading">Loading relievers&hellip;</div></div>' +
+        '</div>'
+      );
+      var head = card.querySelector(".bullpen-card-head");
+      var meta = card.querySelector(".bullpen-meta");
+      var pillSlot = card.querySelector(".fatigue-pill-slot");
+      var body = card.querySelector(".bullpen-card-body");
+      head.addEventListener("click", function (e) {
+        if (e.target.closest(".info-tip")) return; // tapping the info icon shouldn't also toggle the card
+        card.classList.toggle("expanded");
+      });
+
+      fetchBullpen(t.teamId, currentDate).then(function (data) {
+        meta.innerHTML = fatigueSummaryText(data.fatigue);
+        pillSlot.innerHTML = fatiguePillHtml(data.fatigue);
+        if (!data.relievers || !data.relievers.length) {
+          body.innerHTML = '<div class="no-history-note">No reliever appearances recorded in the last ' + BULLPEN_WINDOW_DAYS + ' days.</div>';
+          return;
+        }
+        var rows = data.relievers.map(function (p) {
+          return '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p.appearances + '</td><td>' + p.pitches + '</td><td>' + escapeHtml(p.last_appearance || "–") + '</td></tr>';
+        }).join("");
+        body.innerHTML =
+          '<table><thead><tr><th>Pitcher</th><th>Apps</th><th>Pitches</th><th>Last outing</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      }).catch(function () {
+        meta.innerHTML = "Couldn’t load bullpen data.";
+        pillSlot.innerHTML = "";
+        body.innerHTML = '<div class="empty-day">Couldn’t load reliever data right now.</div>';
+      });
+
+      wrap.appendChild(card);
+    });
+
+    return wrap;
+  }
+
+  function renderBvpSection(game, pitchers, startPitcherId) {
+    var wrap = el('<div style="display:flex;flex-direction:column;gap:12px"></div>');
+
+    var options = pitchers.map(function (p) {
+      var sel = p.id === startPitcherId ? " selected" : "";
+      return '<option value="' + p.id + '"' + sel + '>' + escapeHtml(p.name) + ' (' + escapeHtml(p.team) + ') — vs ' + escapeHtml(p.opp) + '</option>';
+    }).join("");
+    var switcher = el(
+      '<div class="pitcher-switch">' +
+        '<label for="pitcher-select">Viewing lineup vs.</label>' +
+        '<select id="pitcher-select">' + options + '</select>' +
+      '</div>'
+    );
+    wrap.appendChild(switcher);
+
+    var captionHost = el('<div class="lineup-caption"></div>');
+    wrap.appendChild(captionHost);
+    var tableHost = el('<div></div>');
+    wrap.appendChild(tableHost);
+
+    var select = switcher.querySelector("select");
+
+    function loadPitcher(pitcherId) {
+      var entry = pitchers.filter(function (p) { return p.id === pitcherId; })[0];
+      if (!entry) return;
+      if (entry.gamePk !== game.game_pk) {
+        // This pitcher is in a different game today -- jump there so the
+        // header/venue/weather all match what's actually being shown.
+        location.hash = "#/game/" + currentDate + "/" + entry.gamePk + "/" + entry.id;
+        return;
+      }
+      captionHost.innerHTML = 'Every <strong>' + escapeHtml(entry.opp) + '</strong> batter against <strong>' + escapeHtml(entry.name) + '</strong>.';
+      tableHost.innerHTML = '<div class="loading">Loading full stat line&hellip;</div>';
+      fetchLineup(entry.id, entry.oppId).then(function (data) {
+        tableHost.innerHTML = "";
+        tableHost.appendChild(buildLineupTable(data));
+        if (data.pitcher && data.pitcher.recent_form) {
+          captionHost.innerHTML += recentFormText(data.pitcher.recent_form);
+        }
+      }).catch(function () {
+        tableHost.innerHTML = '<div class="empty-day">Couldn’t load this lineup right now.</div>';
+      });
+    }
+    select.addEventListener("change", function () { loadPitcher(parseInt(select.value, 10)); });
+    if (startPitcherId) loadPitcher(startPitcherId);
+
+    return wrap;
+  }
+
+  var COLS = [
+    ["NP", "np"], ["PA", "pa"], ["AB", "ab"], ["H", "h"], ["2B", "d2"], ["3B", "d3"], ["HR", "hr"],
+    ["R", "r"], ["RBI", "rbi"], ["BB", "bb"], ["SO", "so"], ["SB", "sb"], ["CS", "cs"],
+    ["AVG", "avg"], ["OBP", "obp"], ["SLG", "slg"], ["OPS", "ops"], ["wOBA", "woba"]
+  ];
+
+  function buildLineupTable(data) {
+    var scroll = document.createElement("div");
+    scroll.className = "table-scroll";
+    var table = document.createElement("table");
+    table.className = "lineup";
+    table.innerHTML = "<thead><tr><th>Batter</th>" + COLS.map(function (c) { return "<th>" + c[0] + "</th>"; }).join("") + "</tr></thead>";
+    var tbody = document.createElement("tbody");
+
+    data.rows.forEach(function (b) {
+      var tr = document.createElement("tr");
+      var cells = COLS.map(function (c) {
+        var cls = c[1] === "ops" ? "ops-cell " + (b.stats.ops_num >= 0.85 ? "hot" : b.stats.ops_num <= 0.5 ? "cold" : "")
+          : c[1] === "woba" ? "woba-cell" : "";
+        return '<td class="' + cls + '">' + cellValue(b.stats, c[1]) + '</td>';
+      }).join("");
+      tr.innerHTML = '<td>' + escapeHtml(b.name) + '</td>' + cells;
+      if (b.seasons && b.seasons.length) {
+        tr.style.cursor = "pointer";
+        tr.title = "Tap for season-by-season";
+        tr.addEventListener("click", function () { toggleSeasons(tr, b); });
+      }
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    var tfoot = document.createElement("tfoot");
+    var footCells = COLS.map(function (c) { return "<td>" + cellValue(data.team_totals, c[1]) + "</td>"; }).join("");
+    tfoot.innerHTML = '<tr><td>Team totals vs. this pitcher</td>' + footCells + '</tr>';
+    table.appendChild(tfoot);
+
+    scroll.appendChild(table);
+
+    var wrap = document.createElement("div");
+    wrap.style.display = "flex"; wrap.style.flexDirection = "column"; wrap.style.gap = "8px";
+    wrap.appendChild(scroll);
+    if (!data.rows.length) {
+      wrap.appendChild(el('<div class="no-history-note">No roster data yet for this matchup — check back closer to game time.</div>'));
+    } else if (data.no_history && data.no_history.length) {
+      wrap.appendChild(el('<div class="no-history-note">No recorded at-bats yet: ' + data.no_history.map(function (b) { return escapeHtml(b.name); }).join(", ") + '</div>'));
+    }
+    return wrap;
+  }
+
+  function toggleSeasons(tr, batter) {
+    var next = tr.nextElementSibling;
+    if (next && next.classList.contains("season-row")) { next.remove(); return; }
+    tr.parentNode.querySelectorAll("tr.season-row").forEach(function (r) { r.remove(); });
+    var row = document.createElement("tr");
+    row.className = "season-row";
+    var cell = document.createElement("td");
+    cell.colSpan = COLS.length + 1;
+    cell.style.background = "var(--surface-2)";
+    cell.style.padding = "10px 12px";
+    var inner = '<div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">' + escapeHtml(batter.name) + ' by season</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left;font-size:10px;color:var(--muted);padding:3px 6px">Season</th>' +
+      COLS.map(function (c) { return '<th style="text-align:right;font-size:10px;color:var(--muted);padding:3px 6px">' + c[0] + '</th>'; }).join("") + '</tr></thead><tbody>';
+    inner += batter.seasons.map(function (s) {
+      return '<tr><td style="padding:3px 6px;font-family:var(--font-body)">' + escapeHtml(s.season) + ' vs ' + escapeHtml(s.opponent_name || "?") + '</td>' +
+        COLS.map(function (c) { return '<td style="text-align:right;padding:3px 6px;font-family:var(--font-mono)">' + cellValue(s, c[1]) + '</td>'; }).join("") + '</tr>';
+    }).join("");
+    inner += '</tbody></table>';
+    cell.innerHTML = inner;
+    row.appendChild(cell);
+    tr.parentNode.insertBefore(row, tr.nextSibling);
+  }
+
+  // ---- Weather: wind drawn relative to the park's own layout ----
+  // wind_dir_deg is the meteorological "wind FROM" bearing (true compass).
+  // Flip it 180deg to get where the wind is blowing TOWARD, then subtract
+  // the park's own center-field bearing (venue_azimuth_angle) so 0deg =
+  // straight out to dead center, 90deg = toward right field, 180deg =
+  // blowing straight back in from center, 270deg = toward left field --
+  // regardless of true compass direction, which nobody standing in the
+  // batter's box cares about.
+  function relativeWindDeg(game) {
+    var toward = (game.wind_dir_deg + 180) % 360;
+    return (toward - game.venue_azimuth_angle + 360) % 360;
+  }
+
+  // A sentence describing the wind is only worth a reader's attention when
+  // it's blowing hard enough to plausibly matter -- the diagram's arrow
+  // already shows direction, for every game, regardless of speed, so a
+  // stray breeze doesn't need a caption too. Sourced, not guessed: under
+  // 8 mph is generally treated as noise for in-game decisions, and 15+
+  // mph is where multiple sources describe the effect on scoring as
+  // dramatic rather than incremental (see WIND_EXPLAINER for citations).
+  var NOTABLE_WIND_MPH = 8;
+  var STRONG_WIND_MPH = 15;
+
+  // Estimated extra (or lost) carry on a long fly ball, in feet, from
+  // today's wind. Sourced from two independent physics-based trajectory
+  // estimates that converge on roughly 3 ft of carry per mph of wind
+  // blowing along the hit line (straight out or straight in):
+  //   - Alan Nathan's trajectory calculator (baseball physics.illinois.edu
+  //     /carry.html): a 5 mph tailwind added ~16 ft (~3.2 ft/mph); a 5 mph
+  //     headwind cost ~17 ft (~3.4 ft/mph), for a long fly ball.
+  //   - A FanGraphs Wrigley Field wind study using the same kind of
+  //     trajectory model: a 10 mph tailwind added ~29 ft (~2.9 ft/mph); a
+  //     10 mph headwind cost ~33 ft (~3.3 ft/mph).
+  // A pure crosswind contributes roughly nothing to carry -- it shifts
+  // spray direction, not distance -- hence the cos(): full effect at
+  // rel=0/180 (straight out/in), ~0 at rel=90/270 (crosswind). This is a
+  // reasonable estimate for a ball already near the fence, NOT a precise
+  // per-batted-ball prediction -- exit velocity, launch angle,
+  // temperature, and altitude all matter too, and this ignores all of
+  // them. Deliberately NOT folded into the park's HR factor number above,
+  // which is a season-long average and isn't the place to bolt an
+  // unverified single-game percentage onto -- this is shown as its own
+  // separate, clearly-labeled estimate instead.
+  var CARRY_FEET_PER_MPH = 3;
+  function windCarryFeet(rel, speedMph) {
+    return Math.round(speedMph * Math.cos(rel * Math.PI / 180) * CARRY_FEET_PER_MPH);
+  }
+
+  var WIND_EXPLAINER = "Estimated extra (or lost) carry on a long fly " +
+    "ball from today's wind: about 3 ft per mph blowing with/against the " +
+    "hit line, based on published physics trajectory estimates (a pure " +
+    "crosswind adds roughly none). An approximation, not a per-pitch " +
+    "prediction -- exit velocity, launch angle, temperature, and " +
+    "altitude all matter too. Only shown at 8+ mph; below that, wind is " +
+    "treated as noise.";
+
+  // Buckets mirror windHeadline's own: "out" tends to favor hitters (more
+  // carry), "in" tends to favor pitchers (holds the ball up), "cross"
+  // mostly shifts spray direction rather than total distance -- used to
+  // color the callout so a glance tells you which side it's leaning.
+  function windTone(rel) {
+    if (rel < 67.5 || rel >= 292.5) return "out";
+    if (rel >= 112.5 && rel < 247.5) return "in";
+    return "cross";
+  }
+
+  function windHeadline(rel) {
+    var buckets = [
+      [22.5, "Blowing straight out to center — carries fly balls"],
+      [67.5, "Blowing out, toward right field"],
+      [112.5, "Blowing left to right, across the field"],
+      [157.5, "Blowing in, off the right-field side"],
+      [202.5, "Blowing straight in from center — holds up fly balls"],
+      [247.5, "Blowing in, off the left-field side"],
+      [292.5, "Blowing right to left, across the field"],
+      [337.5, "Blowing out, toward left field"]
+    ];
+    for (var i = 0; i < buckets.length; i++) { if (rel < buckets[i][0]) return buckets[i][1]; }
+    return "Blowing straight out to center — carries fly balls";
+  }
+
+  // The directional sentence plus the estimated carry number, e.g.
+  // "Blowing straight out to center — carries fly balls (~+22 ft of
+  // carry, strong wind)". The feet figure is omitted for a mostly-cross
+  // wind (small along-line component -- the sentence already says
+  // "across the field," and a +/-2 ft estimate would just be noise on
+  // top of noise), and "strong wind" is appended past the sourced 15 mph
+  // threshold since that's described as a qualitatively bigger effect,
+  // not just more of the same.
+  function windCalloutText(rel, speedMph) {
+    var text = windHeadline(rel);
+    var feet = windCarryFeet(rel, speedMph);
+    if (Math.abs(feet) >= 5) {
+      text += " (~" + (feet > 0 ? "+" : "") + feet + " ft of carry" +
+        (speedMph >= STRONG_WIND_MPH ? ", strong wind" : "") + ")";
+    }
+    return text;
+  }
+
+  function formatGameTimeEtPt(iso) {
+    // Game time explicitly in ET and PT, regardless of the viewer's own
+    // timezone -- betting research skews toward those two no matter where
+    // the viewer actually is, so (unlike the weather forecast time below,
+    // which is shown in local time) this doesn't follow the browser's
+    // timezone. game_date_time comes from MLB already as a proper
+    // UTC-with-"Z" timestamp, so no manual "Z" append is needed here.
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    var datePart = d.toLocaleDateString("en-US", {
+      timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric"
+    });
+    var et = d.toLocaleTimeString("en-US", {
+      timeZone: "America/New_York", hour: "numeric", minute: "2-digit"
+    });
+    var pt = d.toLocaleTimeString("en-US", {
+      timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit"
+    });
+    return datePart + " · " + et + " ET / " + pt + " PT";
+  }
+
+  function formatForecastTime(iso) {
+    if (!iso) return null;
+    // Stored in UTC with no offset suffix (e.g. "2026-10-02T21:00") --
+    // append Z so the browser parses it as UTC, then show it in the
+    // viewer's own local time.
+    var d = new Date(iso + "Z");
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  }
+
+  function renderWeatherCard(game) {
+    var wrap = el('<div></div>');
+    var hasWeather = game.wind_speed_mph !== null && game.wind_speed_mph !== undefined &&
+      game.wind_dir_deg !== null && game.wind_dir_deg !== undefined &&
+      game.venue_azimuth_angle !== null && game.venue_azimuth_angle !== undefined;
+
+    var hasParkFactor = game.venue_hr_factor !== null && game.venue_hr_factor !== undefined;
+    var parkFactorTile = hasParkFactor ?
+      '<div class="wx-tile"><div class="v">' + game.venue_hr_factor + '</div>' +
+      '<div class="k">HR factor ' + infoTip(HR_FACTOR_EXPLAINER) + '</div></div>' : "";
+
+    if (!hasWeather) {
+      wrap.appendChild(el(
+        '<div class="weather-card"><div class="wx-readout">' +
+          '<div class="wx-headline">Wind data not available yet</div>' +
+          '<div class="wx-raw">Check back closer to game time.</div>' +
+        '</div>' +
+        (parkFactorTile ? '<div class="wx-divider"></div><div class="wx-tiles">' + parkFactorTile + '</div>' : "") +
+        '</div>'
+      ));
+      return wrap;
+    }
+
+    var rel = relativeWindDeg(game);
+    var speed = game.wind_speed_mph;
+    var calm = speed < 4;
+    var notable = !calm && speed >= NOTABLE_WIND_MPH;
+
+    // Field diagram: home plate fixed at bottom, center field always "up" --
+    // the diagram itself is oriented to the park, so the arrow's rotation
+    // alone shows where the wind is headed relative to the field. The
+    // arrow is centered on a fixed mid-field point (not anchored to home
+    // plate) so it never runs off the diagram at any angle.
+    var acx = 64, acy = 56, half = 34;
+    var a = rel * Math.PI / 180;
+    var dx = Math.sin(a), dy = -Math.cos(a);
+    var headX = acx + dx * half, headY = acy + dy * half;
+    var tailX = acx - dx * half, tailY = acy - dy * half;
+    var perpX = dy * 7, perpY = -dx * 7;
+
+    var arrowSvg = calm ? "" :
+      '<line x1="' + tailX + '" y1="' + tailY + '" x2="' + headX + '" y2="' + headY + '" class="wind-arrow" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>' +
+      '<polygon class="wind-arrow" points="' + headX + ',' + headY + ' ' + (headX - dx * 11 + perpX) + ',' + (headY - dy * 11 + perpY) + ' ' + (headX - dx * 11 - perpX) + ',' + (headY - dy * 11 - perpY) + '"/>';
+
+    var asOf = formatForecastTime(game.forecast_time);
+
+    wrap.appendChild(el(
+      '<div class="weather-card">' +
+        '<div class="wx-main">' +
+          '<svg class="field-diagram" viewBox="0 0 128 112">' +
+            '<path class="wedge" d="M 64 100 L 14 32 Q 64 -4 114 32 Z"/>' +
+            '<path class="arc" d="M 14 32 Q 64 -4 114 32"/>' +
+            '<line class="foul-line" x1="64" y1="100" x2="14" y2="32"/>' +
+            '<line class="foul-line" x1="64" y1="100" x2="114" y2="32"/>' +
+            '<text class="field-label" x="22" y="26">LF</text>' +
+            '<text class="field-label" x="64" y="10">CF</text>' +
+            '<text class="field-label" x="106" y="26">RF</text>' +
+            '<circle class="plate" cx="64" cy="100" r="3.5"/>' +
+            arrowSvg +
+          '</svg>' +
+          '<div class="wx-readout">' +
+            (notable ? '<div class="wx-headline wind-' + windTone(rel) + '">' + windCalloutText(rel, speed) + ' ' + infoTip(WIND_EXPLAINER) + '</div>' : '') +
+            '<div class="wx-raw">' + (calm ? "Calm" : speed + ' mph') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="wx-divider"></div>' +
+        '<div class="wx-tiles">' +
+          '<div class="wx-tile"><div class="v">' + (game.temp_f !== null && game.temp_f !== undefined ? Math.round(game.temp_f) + '&deg;' : '–') + '</div><div class="k">Temp</div></div>' +
+          '<div class="wx-tile"><div class="v" style="font-size:13px">' + escapeHtml(game.sky || '–') + '</div><div class="k">Sky</div></div>' +
+          parkFactorTile +
+        '</div>' +
+      '</div>'
+    ));
+    wrap.appendChild(el(
+      '<div class="wx-foot"><span>' + (asOf ? "Forecast for " + asOf + " &middot; " : "") + escapeHtml(game.venue_name || "") + '</span><span>Weather via Open-Meteo</span></div>'
+    ));
+    return wrap;
+  }
+
+  route();
+})();
+</script>
+</body>
+</html>

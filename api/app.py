@@ -32,7 +32,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, make_response, request, send_from_directory
 
 ROOT = Path(__file__).resolve().parent.parent
 # Make both scripts/ and this file's own directory importable regardless of
@@ -67,8 +67,20 @@ if not os.environ.get("SKIP_SCHEDULER"):
 def index():
     """The whole front end is one self-contained page (web/index.html) --
     it does its own routing client-side (see the hash-based router in that
-    file), so this is the only page route the server needs."""
-    return send_from_directory(WEB_DIR, "index.html")
+    file), so this is the only page route the server needs.
+
+    Explicit no-cache: send_from_directory's default headers leave the
+    browser free to reuse an old cached copy of this page without even
+    asking the server (no Cache-Control, just Last-Modified, is enough for
+    most browsers to serve straight from disk for a while). That's exactly
+    how a deploy can "not show up" after a reload -- the browser never
+    re-requested it. no-cache (not no-store) still lets the browser keep a
+    local copy, it just has to revalidate with the server first every
+    time, so an unchanged page is still a cheap 304 and a changed one is
+    never missed."""
+    response = make_response(send_from_directory(WEB_DIR, "index.html"))
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def query_db(sql: str, params: tuple = ()) -> list[dict]:

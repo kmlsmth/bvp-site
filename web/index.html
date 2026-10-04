@@ -44,6 +44,17 @@
   html, body { margin: 0; }
   body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
   .wrap { max-width: 900px; margin: 0 auto; padding: 28px 16px 64px; display: flex; flex-direction: column; gap: 20px; }
+  /* Flex items default to a minimum width based on their content's own
+     intrinsic size, not 0 -- so the BVP table below (deliberately
+     min-width: 860px so its columns don't get crushed, meant to scroll
+     horizontally inside its own .table-scroll box) was instead forcing
+     this whole flex column wider than the phone's screen. Some mobile
+     browsers respond to that by zooming the entire page out to fit,
+     which is what actually made everything look like it was floating in
+     a half-used screen with empty space on the right -- not a layout
+     choice, a viewport-width bug. min-width: 0 opts every direct child
+     back into normal shrink-to-fit behavior. */
+  .wrap > * { min-width: 0; }
 
   .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
   h1 { font-family: var(--font-display); font-weight: 600; font-size: 32px; line-height: 1.08; margin: 0; text-wrap: balance; }
@@ -82,8 +93,13 @@
      a "show" class toggled in JS), and a document-level click handler
      closes it again on a tap elsewhere. ---- */
   .info-tip { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; line-height: 1; cursor: pointer; position: relative; flex-shrink: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  .info-tip::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); font-family: var(--font-body); font-size: 11.5px; font-weight: 400; line-height: 1.4; padding: 9px 11px; border-radius: 9px; width: 220px; max-width: 70vw; white-space: normal; text-align: left; opacity: 0; visibility: hidden; transition: opacity 0.12s; box-shadow: 0 6px 18px rgba(0,0,0,0.2); z-index: 8; }
-  .info-tip:hover::after, .info-tip:focus-visible::after, .info-tip.show::after { opacity: 1; visibility: visible; }
+  /* The bubble itself is appended to <body> and positioned in JS (see
+     positionInfoTip below), NOT a CSS ::after on the button -- several
+     places this is used (the bullpen fatigue pill, in particular) sit
+     inside a card with overflow:hidden for its rounded corners, which
+     silently clipped an ::after-based tooltip trying to float above it. */
+  .info-tip-bubble { position: fixed; background: var(--ink); color: var(--bg); font-family: var(--font-body); font-size: 11.5px; font-weight: 400; line-height: 1.4; padding: 9px 11px; border-radius: 9px; white-space: normal; text-align: left; opacity: 0; visibility: hidden; transition: opacity 0.12s; box-shadow: 0 6px 18px rgba(0,0,0,0.2); z-index: 1000; pointer-events: none; }
+  .info-tip-bubble.show { opacity: 1; visibility: visible; }
 
   /* ---- Bullpen Watch card (game page) ---- */
   .bullpen-cards { display: flex; flex-direction: column; gap: 10px; }
@@ -116,15 +132,24 @@
   .recent-form-note { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
 
   /* ---- Starting lineups (game page) ---- */
+  /* Side-by-side on every width, phones included -- two narrower columns
+     of 9 short lines each fit comfortably, and stacking them full-width
+     only made you scroll twice as far for the same information. */
   .lineups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  @media (max-width: 560px) { .lineups-grid { grid-template-columns: 1fr; } }
-  .lineup-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-  .lineup-card .bullpen-team-name { margin-bottom: 8px; }
+  .lineup-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+  .lineup-card .bullpen-team-name { margin-bottom: 2px; }
+  .lineup-card .lineup-sp { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  .lineup-card .lineup-sp strong { color: var(--ink); font-weight: 600; }
   .lineup-card ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-  .lineup-card li { display: flex; align-items: baseline; gap: 9px; font-size: 13.5px; }
-  .lineup-order { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); width: 14px; flex-shrink: 0; text-align: right; }
+  .lineup-card li { display: flex; align-items: baseline; gap: 7px; font-size: 13.5px; min-width: 0; }
+  .lineup-order { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); width: 13px; flex-shrink: 0; text-align: right; }
   .lineup-pos { font-family: var(--font-mono); font-size: 11px; color: var(--muted); flex-shrink: 0; }
-  .lineup-name { flex: 1 1 auto; }
+  .lineup-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 420px) {
+    .lineup-card { padding: 12px 10px; }
+    .lineup-card .bullpen-team-name { font-size: 14px; }
+    .lineup-card li { font-size: 12.5px; gap: 5px; }
+  }
 
   .empty-day { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; }
   .date-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -140,8 +165,21 @@
     align-self: flex-start;
   }
   .back-link:hover { color: var(--accent); }
-  .game-header .pitchers-line { font-size: 13.5px; color: var(--muted); }
-  .game-header .game-time-line { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); margin-top: 6px; }
+
+  /* ---- Matchup card (game page header): a boxed, centered summary like
+     the rest of the page's cards, instead of a bare page title floating
+     on the background -- team names, then game time and probable
+     pitchers/venue underneath. ---- */
+  .matchup-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px 20px; text-align: center; }
+  .matchup-teams { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 0; }
+  .matchup-team-name { font-family: var(--font-display); font-weight: 600; font-size: 23px; line-height: 1.15; text-wrap: balance; }
+  .matchup-at { font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 15px; color: var(--muted); flex-shrink: 0; }
+  .matchup-time { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); margin-top: 12px; }
+  .matchup-sub { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
+  @media (max-width: 480px) {
+    .matchup-team-name { font-size: 18px; }
+    .matchup-teams { gap: 8px; }
+  }
 
   .section-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 4px 2px -4px; }
   .tabs-note { font-size: 12px; color: var(--muted); font-style: italic; }
@@ -192,26 +230,37 @@
 
   .no-history-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 2px 2px; }
 
-  /* ---- Weather: lives right on the matchup page, field-relative arrow ---- */
-  .weather-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-  .field-diagram { width: 128px; height: 112px; flex-shrink: 0; }
+  /* ---- Weather: lives right on the matchup page, field-relative arrow ----
+     Laid out as two halves of one card (wind description | stat tiles)
+     split by a vertical rule, so it reads as one coherent panel instead of
+     a diagram and some numbers that happened to wrap onto the same line. */
+  .weather-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .wx-main { display: flex; align-items: center; gap: 18px; flex: 1 1 260px; min-width: 0; }
+  .field-diagram { width: 104px; height: 90px; flex-shrink: 0; }
+  .field-diagram .wedge { fill: var(--surface-2); stroke: none; }
   .field-diagram .foul-line { stroke: var(--line); stroke-width: 1.5; fill: none; }
-  .field-diagram .arc { stroke: var(--line); stroke-width: 1.5; fill: none; stroke-dasharray: 2 3; }
+  .field-diagram .arc { stroke: var(--line); stroke-width: 1.5; fill: none; }
   .field-diagram .field-label { font-family: var(--font-mono); font-size: 9px; fill: var(--muted); text-anchor: middle; letter-spacing: 0.03em; }
   .field-diagram .plate { fill: var(--muted); }
   .field-diagram .wind-arrow { fill: var(--accent); }
-  .wx-readout { display: flex; flex-direction: column; gap: 3px; min-width: 180px; }
+  .wx-readout { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .wx-headline { font-family: var(--font-display); font-size: 16.5px; font-weight: 600; line-height: 1.25; }
   .wx-raw { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
-  .wx-tiles { display: flex; gap: 16px; margin-left: auto; }
-  .wx-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-  .wx-tile .v { font-family: var(--font-mono); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .wx-tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .wx-divider { width: 1px; align-self: stretch; background: var(--line); flex-shrink: 0; }
+  .wx-tiles { display: flex; gap: 24px; }
+  .wx-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .wx-tile .v { font-family: var(--font-mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .wx-tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: flex; align-items: center; gap: 4px; }
   .wx-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  @media (max-width: 560px) {
+    .wx-divider { display: none; }
+    .weather-card { gap: 16px; }
+    .wx-tiles { width: 100%; justify-content: space-between; gap: 10px; }
+  }
 
   @media (max-width: 420px) {
     h1 { font-size: 26px; }
-    .wx-tiles { margin-left: 0; width: 100%; justify-content: space-between; }
   }
 </style>
 </head>
@@ -274,20 +323,85 @@
   // ---- Info tip: small tappable "i" with a floating plain-language
   // explanation, used anywhere a number on this site needs a "what does
   // that mean" (HR factor, bullpen fatigue). Click/tap toggles it (works
-  // on touch, unlike a native title="" tooltip); a document-level
-  // listener below closes it again on a tap elsewhere, and still shows
-  // on plain :hover for desktop users.
+  // on touch, unlike a native title="" tooltip); hover/focus shows it on
+  // desktop. The bubble is a single shared element appended to <body> and
+  // positioned in JS with getBoundingClientRect -- NOT a CSS ::after on
+  // the button -- because several spots this is used (the bullpen fatigue
+  // pill, in particular) sit inside a card with overflow:hidden for its
+  // rounded corners, which silently clipped an ::after-based tooltip
+  // trying to float above its own button.
   function infoTip(text) {
     return '<button type="button" class="info-tip" data-tip="' + escapeHtml(text) +
       '" aria-label="More info">i</button>';
   }
+
+  var tipBubble = null;
+  function getTipBubble() {
+    if (!tipBubble) {
+      tipBubble = document.createElement("div");
+      tipBubble.className = "info-tip-bubble";
+      document.body.appendChild(tipBubble);
+    }
+    return tipBubble;
+  }
+
+  var activeTip = null;
+
+  function showInfoTip(btn) {
+    var bubble = getTipBubble();
+    bubble.textContent = btn.getAttribute("data-tip");
+    var bubbleWidth = Math.min(220, window.innerWidth - 24);
+    bubble.style.width = bubbleWidth + "px";
+    bubble.classList.add("show");
+
+    var rect = btn.getBoundingClientRect();
+    var bubbleRect = bubble.getBoundingClientRect();
+    var left = rect.left + rect.width / 2 - bubbleRect.width / 2;
+    left = Math.max(10, Math.min(left, window.innerWidth - bubbleRect.width - 10));
+    // Prefer floating above the button; if there isn't room (the button is
+    // near the top of the viewport -- the fatigue pill often is, since the
+    // Bullpen Watch cards start right at the top of the page on mobile),
+    // flip to below it instead of letting the bubble run off-screen.
+    var top = rect.top - bubbleRect.height - 8;
+    if (top < 8) top = rect.bottom + 8;
+    bubble.style.left = left + "px";
+    bubble.style.top = top + "px";
+  }
+
+  function hideInfoTip() {
+    if (tipBubble) tipBubble.classList.remove("show");
+    if (activeTip) activeTip.classList.remove("tip-active");
+    activeTip = null;
+  }
+
   document.addEventListener("click", function (e) {
     var tip = e.target.closest(".info-tip");
-    document.querySelectorAll(".info-tip.show").forEach(function (t) {
-      if (t !== tip) t.classList.remove("show");
-    });
-    if (tip) { e.preventDefault(); tip.classList.toggle("show"); }
+    if (!tip) { hideInfoTip(); return; }
+    e.preventDefault();
+    if (activeTip === tip) { hideInfoTip(); return; }
+    if (activeTip) activeTip.classList.remove("tip-active");
+    activeTip = tip;
+    tip.classList.add("tip-active");
+    showInfoTip(tip);
   });
+  document.addEventListener("mouseover", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip && tip !== activeTip) showInfoTip(tip);
+  });
+  document.addEventListener("mouseout", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip && tip !== activeTip && !tip.contains(e.relatedTarget)) hideInfoTip();
+  });
+  document.addEventListener("focusin", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip) showInfoTip(tip);
+  });
+  document.addEventListener("focusout", function (e) {
+    var tip = e.target.closest(".info-tip");
+    if (tip && tip !== activeTip) hideInfoTip();
+  });
+  window.addEventListener("scroll", hideInfoTip, true);
+  window.addEventListener("resize", hideInfoTip);
 
   var FATIGUE_EXPLAINER = "How taxed a bullpen is, 0-100: 70% based on " +
     "pitches thrown in the past 7 days vs. the league average for that " +
@@ -458,13 +572,18 @@
     var gameTime = formatGameTimeEtPt(game.game_date_time);
 
     app.appendChild(el(
-      '<div class="game-header">' +
-        '<h1>' + escapeHtml(game.away_team) + ' <span style="color:var(--muted);font-style:italic;font-weight:500">at</span> ' + escapeHtml(game.home_team) + '</h1>' +
-        (gameTime ? '<div class="game-time-line">' + gameTime + '</div>' : "") +
-        '<div class="pitchers-line">' + pitchersLineText(game) + ' &middot; ' + escapeHtml(game.venue_name || "Venue TBD") + '</div>' +
+      '<div class="matchup-card">' +
+        '<h1 class="matchup-teams">' +
+          '<span class="matchup-team-name">' + escapeHtml(game.away_team) + '</span>' +
+          '<span class="matchup-at">@</span>' +
+          '<span class="matchup-team-name">' + escapeHtml(game.home_team) + '</span>' +
+        '</h1>' +
+        (gameTime ? '<div class="matchup-time">' + gameTime + '</div>' : "") +
+        '<div class="matchup-sub">' + pitchersLineText(game) + ' &middot; ' + escapeHtml(game.venue_name || "Venue TBD") + '</div>' +
       '</div>'
     ));
 
+    app.appendChild(el('<div class="section-label">Weather</div>'));
     app.appendChild(renderWeatherCard(game));
 
     app.appendChild(el('<div class="section-label">Batter vs. Pitcher</div>'));
@@ -504,9 +623,13 @@
   // posted 1-3 hours before first pitch, not an early guess/projection
   // (the public API doesn't offer a "likely lineup" ahead of that), so
   // this says "not announced yet" rather than implying a projection.
-  function lineupCardHtml(teamName, lineup) {
+  function lineupCardHtml(teamName, lineup, probablePitcher) {
+    var spLine = '<div class="lineup-sp">Projected SP: ' +
+      (probablePitcher ? '<strong>' + escapeHtml(probablePitcher) + '</strong>' : 'Not yet announced') +
+      '</div>';
     if (!lineup || !lineup.length) {
       return '<div class="lineup-card"><div class="bullpen-team-name">' + escapeHtml(teamName) + '</div>' +
+        spLine +
         '<div class="no-history-note">Lineup not announced yet.</div></div>';
     }
     var items = lineup.map(function (p) {
@@ -515,14 +638,19 @@
         '<span class="lineup-name">' + escapeHtml(p.name || "") + '</span></li>';
     }).join("");
     return '<div class="lineup-card"><div class="bullpen-team-name">' + escapeHtml(teamName) + '</div>' +
+      spLine +
       '<ol>' + items + '</ol></div>';
   }
 
+  // Each card leads with that team's own probable starter, then its
+  // batting order underneath -- same pairing as the "starter, then
+  // lineup below it" sidebar pattern Kamil pointed to, just as its own
+  // card per team instead of a shared sidebar.
   function renderLineupsSection(game) {
     return el(
       '<div class="lineups-grid">' +
-        lineupCardHtml(game.away_team, game.away_lineup) +
-        lineupCardHtml(game.home_team, game.home_lineup) +
+        lineupCardHtml(game.away_team, game.away_lineup, game.away_probable_pitcher) +
+        lineupCardHtml(game.home_team, game.home_lineup, game.home_probable_pitcher) +
       '</div>'
     );
   }
@@ -780,7 +908,7 @@
           '<div class="wx-headline">Wind data not available yet</div>' +
           '<div class="wx-raw">Check back closer to game time.</div>' +
         '</div>' +
-        (parkFactorTile ? '<div class="wx-tiles">' + parkFactorTile + '</div>' : "") +
+        (parkFactorTile ? '<div class="wx-divider"></div><div class="wx-tiles">' + parkFactorTile + '</div>' : "") +
         '</div>'
       ));
       return wrap;
@@ -810,20 +938,24 @@
 
     wrap.appendChild(el(
       '<div class="weather-card">' +
-        '<svg class="field-diagram" viewBox="0 0 128 112">' +
-          '<path class="arc" d="M 14 32 Q 64 -4 114 32"/>' +
-          '<line class="foul-line" x1="64" y1="100" x2="14" y2="32"/>' +
-          '<line class="foul-line" x1="64" y1="100" x2="114" y2="32"/>' +
-          '<text class="field-label" x="22" y="26">LF</text>' +
-          '<text class="field-label" x="64" y="10">CF</text>' +
-          '<text class="field-label" x="106" y="26">RF</text>' +
-          '<circle class="plate" cx="64" cy="100" r="3.5"/>' +
-          arrowSvg +
-        '</svg>' +
-        '<div class="wx-readout">' +
-          '<div class="wx-headline">' + windHeadline(rel, speed) + '</div>' +
-          '<div class="wx-raw">' + (calm ? "Calm" : speed + ' mph') + '</div>' +
+        '<div class="wx-main">' +
+          '<svg class="field-diagram" viewBox="0 0 128 112">' +
+            '<path class="wedge" d="M 64 100 L 14 32 Q 64 -4 114 32 Z"/>' +
+            '<path class="arc" d="M 14 32 Q 64 -4 114 32"/>' +
+            '<line class="foul-line" x1="64" y1="100" x2="14" y2="32"/>' +
+            '<line class="foul-line" x1="64" y1="100" x2="114" y2="32"/>' +
+            '<text class="field-label" x="22" y="26">LF</text>' +
+            '<text class="field-label" x="64" y="10">CF</text>' +
+            '<text class="field-label" x="106" y="26">RF</text>' +
+            '<circle class="plate" cx="64" cy="100" r="3.5"/>' +
+            arrowSvg +
+          '</svg>' +
+          '<div class="wx-readout">' +
+            '<div class="wx-headline">' + windHeadline(rel, speed) + '</div>' +
+            '<div class="wx-raw">' + (calm ? "Calm" : speed + ' mph') + '</div>' +
+          '</div>' +
         '</div>' +
+        '<div class="wx-divider"></div>' +
         '<div class="wx-tiles">' +
           '<div class="wx-tile"><div class="v">' + (game.temp_f !== null && game.temp_f !== undefined ? Math.round(game.temp_f) + '&deg;' : '–') + '</div><div class="k">Temp</div></div>' +
           '<div class="wx-tile"><div class="v" style="font-size:13px">' + escapeHtml(game.sky || '–') + '</div><div class="k">Sky</div></div>' +

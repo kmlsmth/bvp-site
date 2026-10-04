@@ -52,9 +52,16 @@
      browsers respond to that by zooming the entire page out to fit,
      which is what actually made everything look like it was floating in
      a half-used screen with empty space on the right -- not a layout
-     choice, a viewport-width bug. min-width: 0 opts every direct child
-     back into normal shrink-to-fit behavior. */
-  .wrap > * { min-width: 0; }
+     choice, a viewport-width bug. min-width: 0 opts shrink-to-fit back
+     on. Originally just `.wrap > *` (direct children only), which turned
+     out not to be enough: the BVP section's own wrapper is itself a flex
+     column (switcher / caption / table-host stacked), so its *children*
+     -- two levels down from .wrap, not one -- were still carrying the
+     table's min-content width upward uncontained. Broadened to every
+     descendant so a flex wrapper at any depth can't do this; the table's
+     own explicit `min-width: 860px` still wins where it's meant to,
+     since a tag+class selector always beats a bare universal one. */
+  .wrap * { min-width: 0; }
 
   .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
   h1 { font-family: var(--font-display); font-weight: 600; font-size: 32px; line-height: 1.08; margin: 0; text-wrap: balance; }

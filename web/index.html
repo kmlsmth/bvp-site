@@ -245,6 +245,11 @@
   .field-diagram .wind-arrow { fill: var(--accent); }
   .wx-readout { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .wx-headline { font-family: var(--font-display); font-size: 16.5px; font-weight: 600; line-height: 1.25; }
+  /* Only shown at all when the wind is notable -- color says which way it
+     leans at a glance: out = more carry (favors hitters), in = holds the
+     ball up (favors pitchers), cross mostly just shifts spray direction. */
+  .wx-headline.wind-out { color: var(--accent); }
+  .wx-headline.wind-in { color: var(--stitch); }
   .wx-raw { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
   .wx-divider { width: 1px; align-self: stretch; background: var(--line); flex-shrink: 0; }
   .wx-tiles { display: flex; gap: 24px; }
@@ -411,7 +416,9 @@
 
   var HR_FACTOR_EXPLAINER = "Park factor for home runs. 100 = league " +
     "average. A park at 110 sees about 10% more home runs than a " +
-    "neutral park; a park at 91 sees about 9% fewer.";
+    "neutral park; a park at 91 sees about 9% fewer. This is the park's " +
+    "season-long average -- it does NOT change with today's forecast. " +
+    "See the wind estimate above for today's game specifically.";
 
   // ---- Bullpen fatigue display helpers ----
   function fatigueClass(label) {
@@ -843,8 +850,60 @@
     return (toward - game.venue_azimuth_angle + 360) % 360;
   }
 
-  function windHeadline(rel, speedMph) {
-    if (speedMph < 4) return "Calm — not enough wind to matter";
+  // A sentence describing the wind is only worth a reader's attention when
+  // it's blowing hard enough to plausibly matter -- the diagram's arrow
+  // already shows direction, for every game, regardless of speed, so a
+  // stray breeze doesn't need a caption too. Sourced, not guessed: under
+  // 8 mph is generally treated as noise for in-game decisions, and 15+
+  // mph is where multiple sources describe the effect on scoring as
+  // dramatic rather than incremental (see WIND_EXPLAINER for citations).
+  var NOTABLE_WIND_MPH = 8;
+  var STRONG_WIND_MPH = 15;
+
+  // Estimated extra (or lost) carry on a long fly ball, in feet, from
+  // today's wind. Sourced from two independent physics-based trajectory
+  // estimates that converge on roughly 3 ft of carry per mph of wind
+  // blowing along the hit line (straight out or straight in):
+  //   - Alan Nathan's trajectory calculator (baseball physics.illinois.edu
+  //     /carry.html): a 5 mph tailwind added ~16 ft (~3.2 ft/mph); a 5 mph
+  //     headwind cost ~17 ft (~3.4 ft/mph), for a long fly ball.
+  //   - A FanGraphs Wrigley Field wind study using the same kind of
+  //     trajectory model: a 10 mph tailwind added ~29 ft (~2.9 ft/mph); a
+  //     10 mph headwind cost ~33 ft (~3.3 ft/mph).
+  // A pure crosswind contributes roughly nothing to carry -- it shifts
+  // spray direction, not distance -- hence the cos(): full effect at
+  // rel=0/180 (straight out/in), ~0 at rel=90/270 (crosswind). This is a
+  // reasonable estimate for a ball already near the fence, NOT a precise
+  // per-batted-ball prediction -- exit velocity, launch angle,
+  // temperature, and altitude all matter too, and this ignores all of
+  // them. Deliberately NOT folded into the park's HR factor number above,
+  // which is a season-long average and isn't the place to bolt an
+  // unverified single-game percentage onto -- this is shown as its own
+  // separate, clearly-labeled estimate instead.
+  var CARRY_FEET_PER_MPH = 3;
+  function windCarryFeet(rel, speedMph) {
+    return Math.round(speedMph * Math.cos(rel * Math.PI / 180) * CARRY_FEET_PER_MPH);
+  }
+
+  var WIND_EXPLAINER = "Estimated extra (or lost) carry on a long fly " +
+    "ball from today's wind: about 3 ft per mph blowing with/against the " +
+    "hit line, based on published physics trajectory estimates (a pure " +
+    "crosswind adds roughly none). An approximation, not a per-pitch " +
+    "prediction -- exit velocity, launch angle, temperature, and " +
+    "altitude all matter too. Only shown at 8+ mph; below that, wind is " +
+    "treated as noise.";
+
+  // Buckets mirror windHeadline's own: "out" tends to favor hitters (more
+  // carry), "in" tends to favor pitchers (holds the ball up), "cross"
+  // mostly shifts spray direction rather than total distance -- used to
+  // color the callout so a glance tells you which side it's leaning.
+  function windTone(rel) {
+    if (rel < 67.5 || rel >= 292.5) return "out";
+    if (rel >= 112.5 && rel < 247.5) return "in";
+    return "cross";
+  }
+
+  function windHeadline(rel) {
     var buckets = [
       [22.5, "Blowing straight out to center — carries fly balls"],
       [67.5, "Blowing out, toward right field"],
@@ -857,6 +916,24 @@
     ];
     for (var i = 0; i < buckets.length; i++) { if (rel < buckets[i][0]) return buckets[i][1]; }
     return "Blowing straight out to center — carries fly balls";
+  }
+
+  // The directional sentence plus the estimated carry number, e.g.
+  // "Blowing straight out to center — carries fly balls (~+22 ft of
+  // carry, strong wind)". The feet figure is omitted for a mostly-cross
+  // wind (small along-line component -- the sentence already says
+  // "across the field," and a +/-2 ft estimate would just be noise on
+  // top of noise), and "strong wind" is appended past the sourced 15 mph
+  // threshold since that's described as a qualitatively bigger effect,
+  // not just more of the same.
+  function windCalloutText(rel, speedMph) {
+    var text = windHeadline(rel);
+    var feet = windCarryFeet(rel, speedMph);
+    if (Math.abs(feet) >= 5) {
+      text += " (~" + (feet > 0 ? "+" : "") + feet + " ft of carry" +
+        (speedMph >= STRONG_WIND_MPH ? ", strong wind" : "") + ")";
+    }
+    return text;
   }
 
   function formatGameTimeEtPt(iso) {
@@ -917,6 +994,7 @@
     var rel = relativeWindDeg(game);
     var speed = game.wind_speed_mph;
     var calm = speed < 4;
+    var notable = !calm && speed >= NOTABLE_WIND_MPH;
 
     // Field diagram: home plate fixed at bottom, center field always "up" --
     // the diagram itself is oriented to the park, so the arrow's rotation
@@ -951,7 +1029,7 @@
             arrowSvg +
           '</svg>' +
           '<div class="wx-readout">' +
-            '<div class="wx-headline">' + windHeadline(rel, speed) + '</div>' +
+            (notable ? '<div class="wx-headline wind-' + windTone(rel) + '">' + windCalloutText(rel, speed) + ' ' + infoTip(WIND_EXPLAINER) + '</div>' : '') +
             '<div class="wx-raw">' + (calm ? "Calm" : speed + ' mph') + '</div>' +
           '</div>' +
         '</div>' +

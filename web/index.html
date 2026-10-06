@@ -270,6 +270,20 @@
   }
   table.lineup tfoot td:first-child { text-align: left; font-family: var(--font-body); position: sticky; left: 0; background: var(--accent-soft); }
 
+  /* ---- Season-vs-hand + matchup estimate table (under the BVP table) ---- */
+  .est-head { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 14px 2px 6px; }
+  .est-head strong { color: var(--ink); }
+  table.lineup.est { min-width: 660px; }
+  table.lineup.est .est-col { background: var(--accent-soft); }
+  table.lineup.est tbody tr:nth-child(even) td.est-col { background: var(--accent-soft); }
+  table.lineup.est th.est-col { color: var(--accent); }
+  table.lineup.est .first-real { border-left: 2px solid var(--line); }
+  .bat-side { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-left: 4px; }
+  .order-num { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-right: 5px; }
+  .no-h2h { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--stitch); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 5px; white-space: nowrap; }
+  .bench-row td { color: var(--muted); }
+  .est-note { font-size: 11.5px; color: var(--muted); margin: 6px 2px 0; }
+
   .no-history-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 2px 2px; }
 
   /* ---- Weather: lives right on the matchup page, field-relative arrow ----
@@ -372,6 +386,11 @@
   function fetchPitcherOverview(pitcherId, date) {
     return fetch("/api/pitcher?id=" + pitcherId + "&date=" + encodeURIComponent(date))
       .then(function (r) { if (!r.ok) throw new Error("pitcher request failed"); return r.json(); });
+  }
+
+  function fetchEstimates(pitcherId, opponentTeamId, date) {
+    return fetch("/api/estimates?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId + "&date=" + encodeURIComponent(date))
+      .then(function (r) { if (!r.ok) throw new Error("estimates request failed"); return r.json(); });
   }
 
   function fetchStaff(teamId, date) {
@@ -940,6 +959,17 @@
         if (data.fetch_warning) {
           tableHost.appendChild(el('<div class="no-history-note">' + escapeHtml(data.fetch_warning) + '</div>'));
         }
+        var estHost = el('<div><div class="loading">Loading this lineup’s season splits&hellip;</div></div>');
+        tableHost.appendChild(estHost);
+        var oppLineup = entry.oppId === game.home_team_id ? game.home_lineup : game.away_lineup;
+        fetchEstimates(entry.id, entry.oppId, game.game_date).then(function (est) {
+          if (seq !== requestSeq) return;
+          estHost.innerHTML = "";
+          estHost.appendChild(buildEstimatesBlock(est, data, entry, oppLineup));
+        }).catch(function () {
+          if (seq !== requestSeq) return;
+          estHost.innerHTML = '<div class="no-history-note">Season splits unavailable right now.</div>';
+        });
       }).catch(function () {
         if (seq !== requestSeq) return;
         tableHost.innerHTML = '<div class="empty-day">Couldn’t load this lineup right now.</div>';
@@ -999,6 +1029,71 @@
     } else if (data.no_history && data.no_history.length) {
       wrap.appendChild(el('<div class="no-history-note">No recorded at-bats yet: ' + data.no_history.map(function (b) { return escapeHtml(b.name); }).join(", ") + '</div>'));
     }
+    return wrap;
+  }
+
+  // ---- Every hitter: season line vs this pitcher's hand + matchup estimate ----
+  function estTip(hand, pitcherName, league) {
+    var handWord = hand === "L" ? "left-handed" : "right-handed";
+    return "Est. columns: a rough estimate of one plate appearance against " +
+      pitcherName + " -- it blends the hitter's line vs " + handWord + " pitching with how " +
+      pitcherName + " has done this season against hitters from that hitter's side, relative " +
+      "to league average (" + league.obp + " OBP, " + league.k_pct + " K, " + league.hr_pct +
+      " HR per plate appearance), using the odds-ratio method from \"The Book\" (Tango et al.). " +
+      "Small samples are pulled toward league average, so a 2-for-3 doesn't look like a .667 " +
+      "hitter. A guide, not a prediction. The columns after it are each hitter's real 2026 " +
+      "regular-season line against " + handWord + " pitchers.";
+  }
+
+  function buildEstimatesBlock(est, bvp, entry, lineup) {
+    var hand = est.pitcher.throws;
+    var handShort = hand === "L" ? "LHP" : "RHP";
+    var withHistory = {};
+    (bvp.rows || []).forEach(function (b) { withHistory[b.id] = true; });
+
+    // Batting order first (once MLB posts it), then the bench by estimate.
+    var orderById = {};
+    (lineup || []).forEach(function (p) { if (p.id) orderById[p.id] = p.order; });
+    var hasLineup = Object.keys(orderById).length > 0;
+    var rows = est.rows.slice().sort(function (a, b) {
+      var oa = orderById[a.id], ob = orderById[b.id];
+      if (oa && ob) return oa - ob;
+      if (oa) return -1;
+      if (ob) return 1;
+      return b.est.obp_num - a.est.obp_num;
+    });
+
+    var lg = parseFloat(est.league.obp);
+    // Estimate columns right after the name, so they're visible on a phone
+    // without scrolling the table sideways; the real season line follows.
+    var head = '<thead><tr><th>Batter</th>' +
+      '<th class="est-col">Est. OBP</th><th class="est-col">Est. K%</th><th class="est-col">Est. HR%</th>' +
+      '<th class="first-real">PA</th><th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th><th>HR</th><th>K%</th></tr></thead>';
+    var body = rows.map(function (r) {
+      var v = r.vs_hand;
+      var order = orderById[r.id];
+      var cls = r.est.obp_num >= lg + 0.03 ? "hot" : r.est.obp_num <= lg - 0.03 ? "cold" : "";
+      return '<tr class="' + (hasLineup && !order ? "bench-row" : "") + '"><td>' +
+          (order ? '<span class="order-num">' + order + '</span>' : "") + escapeHtml(r.name) +
+          (r.bats ? '<span class="bat-side">' + r.bats + '</span>' : "") +
+          (withHistory[r.id] ? "" : '<span class="no-h2h">no H2H</span>') + '</td>' +
+        '<td class="est-col ops-cell ' + cls + '">' + r.est.obp + '</td><td class="est-col">' + r.est.k_pct +
+          '</td><td class="est-col">' + r.est.hr_pct + '</td>' +
+        '<td class="first-real">' + (v.pa || 0) + '</td><td>' + (v.avg || "–") + '</td><td>' + (v.obp || "–") + '</td><td>' +
+          (v.slg || "–") + '</td><td>' + (v.ops || "–") + '</td><td>' + (v.hr === null || v.hr === undefined ? "–" : v.hr) +
+          '</td><td>' + (v.k_pct || "–") + '</td></tr>';
+    }).join("");
+
+    var wrap = el('<div></div>');
+    wrap.appendChild(el('<div class="est-head"><span>Every <strong>' + escapeHtml(entry.opp) + '</strong> hitter: 2026 vs ' +
+      handShort + ', and estimated vs <strong>' + escapeHtml(entry.name) + '</strong></span>' +
+      infoTip(estTip(hand, entry.name, est.league)) + '</div>'));
+    var scroll = el('<div class="table-scroll"></div>');
+    scroll.appendChild(el('<table class="lineup est">' + head + '<tbody>' + body + '</tbody></table>'));
+    wrap.appendChild(scroll);
+    wrap.appendChild(el('<div class="est-note">' +
+      (hasLineup ? "Today’s batting order first, then the bench. " : "Sorted by estimated OBP (lineup not posted yet). ") +
+      '<span class="no-h2h" style="margin-left:0">no H2H</span> = has never faced him.</div>'));
     return wrap;
   }
 
@@ -1164,6 +1259,20 @@
     return d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
   }
 
+  // "12 min ago" / "3 hr ago" from the server's UTC "YYYY-MM-DD HH:MM:SS"
+  // fetch timestamp -- so it's visible how fresh the forecast is. Within
+  // ~3 hours of first pitch it's re-pulled every ~20 minutes.
+  function fetchedAgo(ts) {
+    if (!ts) return null;
+    var d = new Date(ts.replace(" ", "T") + "Z");
+    if (isNaN(d.getTime())) return null;
+    var mins = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+    if (mins < 1) return "just now";
+    if (mins < 60) return mins + " min ago";
+    var hrs = Math.round(mins / 60);
+    return hrs < 24 ? hrs + " hr ago" : null;
+  }
+
   function renderWeatherCard(game) {
     var wrap = el('<div></div>');
     var hasWeather = game.wind_speed_mph !== null && game.wind_speed_mph !== undefined &&
@@ -1241,7 +1350,8 @@
       '</div>'
     ));
     wrap.appendChild(el(
-      '<div class="wx-foot"><span>' + (asOf ? "Forecast for " + asOf + " &middot; " : "") + escapeHtml(game.venue_name || "") + '</span><span>Weather via Open-Meteo</span></div>'
+      '<div class="wx-foot"><span>' + (asOf ? "Forecast for " + asOf + " &middot; " : "") + escapeHtml(game.venue_name || "") + '</span><span>' +
+        (fetchedAgo(game.weather_fetched_at) ? "Updated " + fetchedAgo(game.weather_fetched_at) + " &middot; " : "") + 'Weather via Open-Meteo</span></div>'
     ));
     return wrap;
   }

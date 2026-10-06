@@ -253,6 +253,52 @@ def test_live_mlb_endpoints(client) -> None:
     assert calls["vs"] == 2, calls
     print(f"/api/lineup?fetch=1 OK: {lu['rows'][0]['name']} 2-for-6 vs reliever, cached on re-view")
 
+    # --- /api/estimates: every hitter's line vs the pitcher's hand + estimate
+    seen = {}
+
+    def fake_hitters(ids, season, sit_code):
+        seen["sit_code"] = sit_code
+        return {"people": [
+            {"id": 139001, "fullName": "Away Hitter One", "batSide": {"code": "S"},
+             "stats": [{"splits": [{"split": {"code": sit_code}, "stat": {
+                 "plateAppearances": 300, "hits": 80, "baseOnBalls": 30, "hitByPitch": 2,
+                 "strikeOuts": 50, "homeRuns": 15, "avg": ".296", "obp": ".373",
+                 "slg": ".530", "ops": ".903"}}]}]},
+            {"id": 139002, "fullName": "Away Hitter Two", "batSide": {"code": "R"}},  # no split vs this hand
+        ]}
+
+    def fake_pitcher_vs(pid, season):
+        return {"stats": [{"splits": [
+            {"split": {"code": "vl"}, "stat": {"battersFaced": 200, "hits": 40, "baseOnBalls": 15,
+                                               "hitByPitch": 1, "strikeOuts": 60, "homeRuns": 5}},
+            {"split": {"code": "vr"}, "stat": {"battersFaced": 400, "hits": 70, "baseOnBalls": 20,
+                                               "hitByPitch": 2, "strikeOuts": 110, "homeRuns": 8}},
+        ]}]}
+
+    def fake_league(season):
+        return {"stats": [{"splits": [{"stat": {"plateAppearances": 6000, "hits": 1300, "baseOnBalls": 530,
+                                                "hitByPitch": 70, "strikeOuts": 1330, "homeRuns": 180}}] * 30}]}
+
+    mlb_api.get_hitters_vs_hand = fake_hitters
+    mlb_api.get_pitcher_vs_hand = fake_pitcher_vs
+    mlb_api.get_league_team_hitting = fake_league
+
+    resp = client.get("/api/estimates?pitcher=555666&opponent_team=139&date=2026-10-05")
+    assert resp.status_code == 200, resp.status_code
+    est = resp.get_json()
+    assert est["pitcher"]["throws"] == "L" and seen["sit_code"] == "vl", (est["pitcher"], seen)
+    assert est["league"]["obp"] == ".317", est["league"]  # 1900/6000
+    by_name = {r["name"]: r for r in est["rows"]}
+    assert set(by_name) == {"Away Hitter One", "Away Hitter Two"}, by_name  # roster pitcher excluded
+    one, two = by_name["Away Hitter One"], by_name["Away Hitter Two"]
+    assert one["vs_hand"]["pa"] == 300 and one["vs_hand"]["ops"] == ".903", one
+    assert one["pitcher_bf_vs_side"] == 400, one  # switch hitter bats RIGHT vs a lefty
+    assert two["vs_hand"]["pa"] == 0 and two["vs_hand"]["ops"] is None, two
+    assert two["pitcher_bf_vs_side"] == 400, two
+    assert one["est"]["obp_num"] > two["est"]["obp_num"], (one["est"], two["est"])
+    assert est["rows"][0]["name"] == "Away Hitter One"  # sorted best estimate first
+    print(f"/api/estimates OK: {[(r['name'], r['est']['obp'], r['est']['k_pct'], r['est']['hr_pct']) for r in est['rows']]}")
+
 
 if __name__ == "__main__":
     main()

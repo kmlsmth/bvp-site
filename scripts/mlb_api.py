@@ -121,6 +121,44 @@ def get_pitching_stats(pitcher_id: int, season: int, stat_types: str,
     return resp.json()
 
 
+def get_hitters_vs_hand(person_ids: list[int], season: int, sit_code: str) -> dict:
+    """Many hitters in ONE call: each one's bio (incl. batSide) plus his
+    regular-season line against one pitcher hand -- sit_code "vr" = vs
+    right-handed pitchers, "vl" = vs left-handed. Verified live: the
+    people endpoint accepts a comma list of ids with this stats hydrate."""
+    url = f"{BASE_URL}/people"
+    params = {
+        "personIds": ",".join(str(i) for i in person_ids),
+        "hydrate": (f"stats(group=[hitting],type=[statSplits],sitCodes=[{sit_code}],"
+                    f"season={season},gameType=[R])"),
+    }
+    resp = requests.get(url, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_pitcher_vs_hand(pitcher_id: int, season: int) -> dict:
+    """A pitcher's regular-season line against left-handed ("vl") and
+    right-handed ("vr") hitters."""
+    url = f"{BASE_URL}/people/{pitcher_id}/stats"
+    params = {"stats": "statSplits", "group": "pitching", "season": season,
+              "sitCodes": "vl,vr", "gameType": REGULAR_SEASON}
+    resp = requests.get(url, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_league_team_hitting(season: int) -> dict:
+    """All 30 teams' regular-season hitting totals (summed into league
+    averages by the caller)."""
+    url = f"{BASE_URL}/teams/stats"
+    params = {"season": season, "group": "hitting", "stats": "season",
+              "sportIds": 1, "gameType": REGULAR_SEASON}
+    resp = requests.get(url, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def get_boxscore(game_pk: int) -> dict:
     """Full box score for one game: every pitcher's line (innings, pitches,
     runs, walks, strikeouts, hits) for both teams. This is the one new data

@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bullpen as bullpen_module  # noqa: E402
 import db as db_module  # noqa: E402  (shares BVP_DATA_DIR / DB_PATH logic)
 import init_db as init_db_module  # noqa: E402
+import matchup_estimate  # noqa: E402
 import mlb_api  # noqa: E402
 import parsing  # noqa: E402
 import stats as stats_module  # noqa: E402
@@ -210,7 +211,7 @@ def games():
                v.roof_type AS venue_roof_type, v.hr_factor AS venue_hr_factor,
                v.hit_factor AS venue_hit_factor,
                gw.wind_speed_mph, gw.wind_dir_deg, gw.wind_dir_compass,
-               gw.temp_f, gw.sky, gw.forecast_time
+               gw.temp_f, gw.sky, gw.forecast_time, gw.fetched_at AS weather_fetched_at
         FROM games g
         LEFT JOIN teams ht ON ht.id = g.home_team_id
         LEFT JOIN teams at ON at.id = g.away_team_id
@@ -579,6 +580,92 @@ def bullpen_route():
         "window_days": BULLPEN_WINDOW_DAYS,
     })
 
+
+
+LEAGUE_CACHE_SECONDS = 6 * 60 * 60
+
+
+def _fmt_rate3(x: float | None) -> str | None:
+    """.312-style (OBP)."""
+    return None if x is None else f"{x:.3f}".lstrip("0")
+
+
+def _fmt_pct(x: float | None, digits: int = 1) -> str | None:
+    return None if x is None else f"{x * 100:.{digits}f}%"
+
+
+@app.get("/api/estimates")
+def estimates_route():
+    """Every position player on the opposing roster: his 2026 regular-season
+    line against this pitcher's throwing hand, plus an estimated on-base /
+    strikeout / home-run rate against THIS pitcher (see
+    scripts/matchup_estimate.py for the method). Covers every hitter --
+    including the many with no head-to-head history at all. Four MLB calls
+    for a whole lineup, each cached."""
+    pitcher_id = request.args.get("pitcher", type=int)
+    opponent_team_id = request.args.get("opponent_team", type=int)
+    if not pitcher_id or not opponent_team_id:
+        return jsonify({"error": "pitcher and opponent_team query params (ids) are required"}), 400
+    season = _season_from(request.args.get("date"))
+
+    try:
+        throws = _person(pitcher_id).get("throws")
+        if throws not in ("L", "R"):
+            return jsonify({"error": "MLB doesn't list this pitcher's throwing hand."}), 502
+        sit_code = "vr" if throws == "R" else "vl"
+
+        batters = [b for b in _team_roster(opponent_team_id)
+                   if b["position_type"] != "Pitcher" and b["id"]]
+        ids = tuple(sorted(b["id"] for b in batters))
+        hitters = _cached(("hitters-vs", ids, sit_code, season), STATS_CACHE_SECONDS,
+                          lambda: parsing.parse_hitters_vs_hand(
+                              mlb_api.get_hitters_vs_hand(list(ids), season, sit_code), sit_code))
+        pitcher_split = _cached(("pitcher-vs", pitcher_id, season), STATS_CACHE_SECONDS,
+                                lambda: parsing.parse_pitcher_vs_hand(
+                                    mlb_api.get_pitcher_vs_hand(pitcher_id, season)))
+        league = _cached(("league", season), LEAGUE_CACHE_SECONDS,
+                         lambda: matchup_estimate.league_rates(
+                             parsing.parse_team_hitting_lines(mlb_api.get_league_team_hitting(season))))
+    except Exception as exc:
+        print(f"[estimates] pitcher={pitcher_id} team={opponent_team_id}: {exc}")
+        return jsonify({"error": "Couldn't load season splits from MLB right now."}), 502
+
+    rows = []
+    for b in batters:
+        h = hitters.get(b["id"]) or {}
+        side = matchup_estimate.facing_side(h.get("bats"), throws)
+        line = h.get("stat")
+        h_counts = matchup_estimate.hitting_counts(line)
+        p_counts = matchup_estimate.pitching_counts(pitcher_split.get(side)) if side else None
+        est = matchup_estimate.estimate(h_counts, p_counts, league)
+        pa = h_counts["pa"] if h_counts else 0
+        rows.append({
+            "id": b["id"],
+            "name": h.get("name") or b["full_name"],
+            "bats": h.get("bats"),
+            "vs_hand": {
+                "pa": pa,
+                "avg": (line or {}).get("avg"), "obp": (line or {}).get("obp"),
+                "slg": (line or {}).get("slg"), "ops": (line or {}).get("ops"),
+                "hr": (line or {}).get("homeRuns"),
+                "k_pct": _fmt_pct(h_counts["so"] / pa, 0) if pa else None,
+            },
+            "est": {
+                "obp": _fmt_rate3(est["ob"]), "obp_num": est["ob"],
+                "k_pct": _fmt_pct(est["so"], 0), "k_num": est["so"],
+                "hr_pct": _fmt_pct(est["hr"], 1), "hr_num": est["hr"],
+            },
+            "pitcher_bf_vs_side": (p_counts or {}).get("pa", 0),
+        })
+    rows.sort(key=lambda r: r["est"]["obp_num"], reverse=True)
+
+    return jsonify({
+        "pitcher": {"id": pitcher_id, "throws": throws},
+        "season": season,
+        "league": {"obp": _fmt_rate3(league["ob"]), "k_pct": _fmt_pct(league["so"], 0),
+                   "hr_pct": _fmt_pct(league["hr"], 1)},
+        "rows": rows,
+    })
 
 @app.get("/api/players")
 def players():

@@ -182,33 +182,7 @@ def refresh_probable_pitchers(target_date: str) -> int:
             if status in ingest_appearances._COMPLETED_STATUSES:
                 continue  # nothing left to announce for a finished game
 
-            home_pitcher = game["home_probable_pitcher_id"]
-            away_pitcher = game["away_probable_pitcher_id"]
-            if home_pitcher:
-                db.upsert_player(conn, home_pitcher,
-                                  game["home_probable_pitcher_name"], role="pitcher")
-            if away_pitcher:
-                db.upsert_player(conn, away_pitcher,
-                                  game["away_probable_pitcher_name"], role="pitcher")
-
-            venues_mod.ensure_venue(conn, game.get("venue_id"))
-            db.upsert_game(conn, game)
-            conn.commit()
-
-            new_pairs = []
-            if home_pitcher is not None and home_pitcher != had_home:
-                print(f"    newly announced: {game['home_probable_pitcher_name']} "
-                      f"(game {game['game_pk']})")
-                newly_found += 1
-                new_pairs += _pairs_for_pitcher(conn, home_pitcher, game["away_team_id"])
-            if away_pitcher is not None and away_pitcher != had_away:
-                print(f"    newly announced: {game['away_probable_pitcher_name']} "
-                      f"(game {game['game_pk']})")
-                newly_found += 1
-                new_pairs += _pairs_for_pitcher(conn, away_pitcher, game["home_team_id"])
-
-            for batter_id, pitcher_id in new_pairs:
-                _ingest_matchup(conn, batter_id, pitcher_id)
+            newly_found += _update_game_and_pitchers(conn, game, had_home, had_away)
     except Exception:
         # Same philosophy as the scheduler loop around ingest_date: a bad
         # hour (API hiccup, unexpected shape) shouldn't crash the process
@@ -218,6 +192,129 @@ def refresh_probable_pitchers(target_date: str) -> int:
     finally:
         conn.close()
     return newly_found
+
+
+def _update_game_and_pitchers(conn, game: dict, had_home, had_away) -> int:
+    """Store the latest version of one not-yet-finished game -- probable
+    pitchers, posted lineups, status -- and, for any probable pitcher who
+    wasn't on file before (newly announced, or a late scratch replaced by
+    someone else), pull his matchup history against the opposing roster.
+    Shared by the hourly refresh and the pre-game refresh. Returns how many
+    newly-announced pitchers were found."""
+    newly_found = 0
+    home_pitcher = game["home_probable_pitcher_id"]
+    away_pitcher = game["away_probable_pitcher_id"]
+    if home_pitcher:
+        db.upsert_player(conn, home_pitcher,
+                          game["home_probable_pitcher_name"], role="pitcher")
+    if away_pitcher:
+        db.upsert_player(conn, away_pitcher,
+                          game["away_probable_pitcher_name"], role="pitcher")
+
+    venues_mod.ensure_venue(conn, game.get("venue_id"))
+    db.upsert_game(conn, game)
+    conn.commit()
+
+    new_pairs = []
+    if home_pitcher is not None and home_pitcher != had_home:
+        print(f"    newly announced: {game['home_probable_pitcher_name']} "
+              f"(game {game['game_pk']})")
+        newly_found += 1
+        new_pairs += _pairs_for_pitcher(conn, home_pitcher, game["away_team_id"])
+    if away_pitcher is not None and away_pitcher != had_away:
+        print(f"    newly announced: {game['away_probable_pitcher_name']} "
+              f"(game {game['game_pk']})")
+        newly_found += 1
+        new_pairs += _pairs_for_pitcher(conn, away_pitcher, game["home_team_id"])
+
+    for batter_id, pitcher_id in new_pairs:
+        _ingest_matchup(conn, batter_id, pitcher_id)
+    return newly_found
+
+
+# --- Pre-game refresh --------------------------------------------------
+# The hourly refresh above can leave a game's info up to an hour old at
+# first pitch, and weather was only pulled once a day (in ingest_date) --
+# so a forecast made that morning was what showed at game time. This pass
+# runs every few minutes (see api/scheduler.py) but only touches games
+# starting soon:
+#   - within PREGAME_WINDOW_HOURS of first pitch: re-read probable pitchers,
+#     lineups and status on every pass (one schedule call covers every game),
+#   - and re-pull that game's weather whenever the stored forecast is older
+#     than WEATHER_MAX_AGE_MINUTES -- so at first pitch the forecast shown is
+#     never more than ~30 minutes old.
+PREGAME_WINDOW_HOURS = 3
+WEATHER_MAX_AGE_MINUTES = 20
+_STARTED_GRACE_MINUTES = 15  # still refresh a game that's a few minutes late starting
+
+
+def _parse_utc(ts: str | None):
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def is_pregame(game: dict, now_utc) -> bool:
+    """True if first pitch is within the next PREGAME_WINDOW_HOURS (or only
+    just passed) and the game isn't finished."""
+    status = (game.get("status") or "").strip().lower()
+    if status in ingest_appearances._COMPLETED_STATUSES:
+        return False
+    start = _parse_utc(game.get("game_date_time"))
+    if start is None:
+        return False
+    minutes_until = (start - now_utc).total_seconds() / 60
+    return -_STARTED_GRACE_MINUTES <= minutes_until <= PREGAME_WINDOW_HOURS * 60
+
+
+def weather_is_stale(conn, game_pk: int, now_utc) -> bool:
+    row = conn.execute("SELECT fetched_at FROM game_weather WHERE game_pk = ?",
+                       (game_pk,)).fetchone()
+    if row is None or not row[0]:
+        return True
+    # SQLite datetime('now') is UTC, stored as "YYYY-MM-DD HH:MM:SS".
+    fetched = datetime.fromisoformat(row[0].replace(" ", "T") + "+00:00")
+    return (now_utc - fetched).total_seconds() / 60 >= WEATHER_MAX_AGE_MINUTES
+
+
+def pregame_refresh(target_date: str, now_utc=None) -> dict:
+    """See the comment block above. Returns counts, for logging/tests."""
+    now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
+    counts = {"games_checked": 0, "weather_refreshed": 0, "new_pitchers": 0}
+    conn = db.connect()
+    try:
+        games = parsing.parse_schedule(mlb_api.get_schedule(target_date))
+        for game in games:
+            if not is_pregame(game, now_utc):
+                continue
+            counts["games_checked"] += 1
+            existing = conn.execute(
+                "SELECT home_probable_pitcher_id, away_probable_pitcher_id "
+                "FROM games WHERE game_pk = ?",
+                (game["game_pk"],),
+            ).fetchone()
+            db.upsert_team(conn, game["home_team_id"], game["home_team_name"])
+            db.upsert_team(conn, game["away_team_id"], game["away_team_name"])
+            counts["new_pitchers"] += _update_game_and_pitchers(
+                conn, game,
+                existing[0] if existing else None,
+                existing[1] if existing else None,
+            )
+            if weather_is_stale(conn, game["game_pk"], now_utc):
+                venues_mod.refresh_weather(conn, game)
+                conn.commit()
+                counts["weather_refreshed"] += 1
+        if counts["games_checked"]:
+            print(f"[pregame] {target_date}: {counts}")
+    except Exception:
+        print(f"[pregame_refresh] {target_date} failed:")
+        traceback.print_exc()
+    finally:
+        conn.close()
+    return counts
 
 
 def _pairs_for_pitcher(conn, pitcher_id: int, opposing_team_id: int) -> list[tuple[int, int]]:

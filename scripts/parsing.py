@@ -326,3 +326,52 @@ def parse_person_throws(raw: dict) -> dict:
         "full_name": person.get("fullName"),
         "throws": (person.get("pitchHand") or {}).get("code"),
     }
+
+
+# --- Handedness splits (matchup estimate) ---------------------------------
+
+def _first_split(stat_blocks: list, code: str | None = None) -> dict | None:
+    """The split matching `code`. A player traded mid-season gets SEVERAL
+    matching splits -- one per team plus a combined line, in no reliable
+    order (seen live 2026-10-06: Luis García Jr. vs RHP = 317 + 139 PA by
+    team, then 456 combined; Freddy Peralta's season line had the combined
+    one FIRST). The combined line is always the biggest, so take that."""
+    best, best_n = None, -1
+    for block in stat_blocks or []:
+        for sp in block.get("splits") or []:
+            if code is not None and (sp.get("split") or {}).get("code") != code:
+                continue
+            st = sp.get("stat") or {}
+            n = st.get("plateAppearances") or st.get("battersFaced") or 0
+            if n > best_n:
+                best, best_n = sp, n
+    return best
+
+
+def parse_hitters_vs_hand(raw: dict, sit_code: str) -> dict:
+    """mlb_api.get_hitters_vs_hand() -> {player_id: {"name", "bats",
+    "stat" (MLB's raw hitting line vs that hand, or None if he hasn't
+    faced that hand this season)}}."""
+    out = {}
+    for p in raw.get("people") or []:
+        sp = _first_split(p.get("stats"), sit_code)
+        out[p.get("id")] = {
+            "name": p.get("fullName"),
+            "bats": (p.get("batSide") or {}).get("code"),
+            "stat": (sp or {}).get("stat"),
+        }
+    return out
+
+
+def parse_pitcher_vs_hand(raw: dict) -> dict:
+    """mlb_api.get_pitcher_vs_hand() -> {"L": raw line vs lefty hitters,
+    "R": raw line vs righty hitters} (None where he has no data)."""
+    blocks = raw.get("stats") or []
+    vl, vr = _first_split(blocks, "vl"), _first_split(blocks, "vr")
+    return {"L": (vl or {}).get("stat"), "R": (vr or {}).get("stat")}
+
+
+def parse_team_hitting_lines(raw: dict) -> list[dict]:
+    """mlb_api.get_league_team_hitting() -> one raw hitting line per team."""
+    blocks = raw.get("stats") or []
+    return [sp.get("stat") or {} for b in blocks for sp in (b.get("splits") or [])]

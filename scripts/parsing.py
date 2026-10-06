@@ -255,3 +255,74 @@ def parse_roster(raw: dict) -> list[dict]:
             "position_type": position.get("type"),  # e.g. "Pitcher", "Outfielder"
         })
     return players
+
+
+# --- A pitcher's own pitching stats (starter overview card) ----------------
+
+def _pitching_count_row(stat: dict) -> dict:
+    """One pitching stat line -> the same raw column names pitcher_appearances
+    uses, so the existing rate-stat math in bullpen.py works on it
+    unchanged. MLB includes a plain "outs" count on these lines (verified
+    live); inningsPitched ("5.2" = 5 innings + 2 outs) is the fallback."""
+    outs = stat.get("outs")
+    if outs is None:
+        outs = _innings_pitched_to_outs(stat.get("inningsPitched"))
+    return {
+        "outs": outs,
+        "pitches": stat.get("numberOfPitches"),
+        "batters_faced": stat.get("battersFaced"),
+        "earned_runs": stat.get("earnedRuns"),
+        "base_on_balls": stat.get("baseOnBalls"),
+        "strike_outs": stat.get("strikeOuts"),
+        "hits": stat.get("hits"),
+        "games_started": stat.get("gamesStarted"),
+    }
+
+
+def parse_pitching_totals(raw: dict) -> dict:
+    """Response from mlb_api.get_pitching_stats(..., "season,career") ->
+    {"season": row or None, "career": row or None}. A pitcher with no
+    appearances this season simply has no "season" split.
+
+    A pitcher traded mid-season gets SEVERAL season splits: one per team
+    plus a combined total (seen live: Freddy Peralta 2026 -> 32 GS total,
+    22 + 10 by team). The combined line is the one with the most outs --
+    picked that way rather than by position in the list, which MLB
+    doesn't document."""
+    out = {"season": None, "career": None}
+    for block in raw.get("stats", []):
+        kind = (block.get("type") or {}).get("displayName")
+        splits = block.get("splits") or []
+        if kind in out and splits:
+            rows = [_pitching_count_row(sp.get("stat") or {}) for sp in splits]
+            out[kind] = max(rows, key=lambda r: r["outs"] or 0)
+    return out
+
+
+def parse_pitching_gamelog(raw: dict) -> list[dict]:
+    """Response from mlb_api.get_pitching_stats(..., "gameLog") -> one row
+    per game pitched: date, game type (R, or F/D/L/W for postseason),
+    whether he started, and that game's raw counts."""
+    rows = []
+    for block in raw.get("stats", []):
+        if (block.get("type") or {}).get("displayName") != "gameLog":
+            continue
+        for split in block.get("splits") or []:
+            row = _pitching_count_row(split.get("stat") or {})
+            row["game_date"] = split.get("date")
+            row["game_type"] = split.get("gameType")
+            row["game_pk"] = (split.get("game") or {}).get("gamePk")
+            row["started"] = bool(row["games_started"])
+            rows.append(row)
+    return rows
+
+
+def parse_person_throws(raw: dict) -> dict:
+    """Response from mlb_api.get_person() -> name + throwing hand ("L"/"R",
+    or None if MLB doesn't list one)."""
+    people = raw.get("people") or [{}]
+    person = people[0] or {}
+    return {
+        "full_name": person.get("fullName"),
+        "throws": (person.get("pitchHand") or {}).get("code"),
+    }

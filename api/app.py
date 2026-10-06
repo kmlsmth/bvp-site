@@ -29,6 +29,9 @@ import json
 import os
 import sqlite3
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -44,6 +47,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bullpen as bullpen_module  # noqa: E402
 import db as db_module  # noqa: E402  (shares BVP_DATA_DIR / DB_PATH logic)
 import init_db as init_db_module  # noqa: E402
+import mlb_api  # noqa: E402
+import parsing  # noqa: E402
 import stats as stats_module  # noqa: E402
 
 BULLPEN_WINDOW_DAYS = 7  # trailing window for fatigue + recent appearances
@@ -141,6 +146,50 @@ def _team_bullpen_rows(team_id: int, as_of_date: str) -> list[dict]:
 def _team_fatigue(team_id: int, as_of_date: str, league_avg: float) -> dict:
     rows = _team_bullpen_rows(team_id, as_of_date)
     return bullpen_module.compute_bullpen_fatigue(rows, as_of_date, league_avg)
+
+
+# --- Live MLB lookups made while serving a page ------------------------
+# The starter overview card and the bullpen dropdown read a few things
+# straight from MLB when a page asks for them (rather than in the nightly
+# job), cached in memory so a busy game page costs MLB a handful of calls
+# an hour, not one per visitor. One gunicorn worker (see Procfile), so one
+# shared cache; a restart just starts it empty again.
+STATS_CACHE_SECONDS = 60 * 60
+ROSTER_CACHE_SECONDS = 60 * 60
+BVP_FETCH_CACHE_SECONDS = 6 * 60 * 60
+
+_cache: dict = {}
+_cache_lock = threading.Lock()
+_bvp_fetch_lock = threading.Lock()
+
+
+def _cached(key, ttl_seconds: int, fn):
+    now = time.time()
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit and now - hit[0] < ttl_seconds:
+            return hit[1]
+    value = fn()  # outside the lock: network calls shouldn't block other lookups
+    with _cache_lock:
+        _cache[key] = (now, value)
+    return value
+
+
+def _team_roster(team_id: int) -> list[dict]:
+    return _cached(("roster", team_id), ROSTER_CACHE_SECONDS,
+                   lambda: parsing.parse_roster(mlb_api.get_team_roster(team_id)))
+
+
+def _person(person_id: int) -> dict:
+    return _cached(("person", person_id), STATS_CACHE_SECONDS,
+                   lambda: parsing.parse_person_throws(mlb_api.get_person(person_id)))
+
+
+def _season_from(request_date: str | None) -> int:
+    try:
+        return date.fromisoformat(request_date).year if request_date else date.today().year
+    except ValueError:
+        return date.today().year
 
 
 @app.get("/api/games")
@@ -247,6 +296,19 @@ def lineup():
     if not pitcher_id or not opponent_team_id:
         return jsonify({"error": "pitcher and opponent_team query params (ids) are required"}), 400
 
+    # Relievers: the nightly job only pulls matchup history for each
+    # game's two probable starters (pulling every bullpen arm against every
+    # hitter nightly would be ~10x the MLB calls). So the first time anyone
+    # picks a reliever, pull his history against this lineup right now.
+    fetch_warning = None
+    if request.args.get("fetch") == "1":
+        try:
+            _fetch_bvp_on_demand(pitcher_id, opponent_team_id,
+                                 request.args.get("pitcher_team", type=int))
+        except Exception as exc:  # show whatever's already stored rather than failing
+            print(f"[lineup fetch] pitcher={pitcher_id} team={opponent_team_id}: {exc}")
+            fetch_warning = "Couldn't reach MLB just now -- showing whatever history is already stored."
+
     pitcher_rows = query_db("SELECT full_name FROM players WHERE id = ?", (pitcher_id,))
     team_rows = query_db("SELECT name FROM teams WHERE id = ?", (opponent_team_id,))
     pitcher_name = pitcher_rows[0]["full_name"] if pitcher_rows else None
@@ -327,7 +389,154 @@ def lineup():
         "rows": with_history,
         "no_history": no_history,
         "team_totals": team_totals,
+        "fetch_warning": fetch_warning,
     })
+
+
+def _fetch_bvp_on_demand(pitcher_id: int, opponent_team_id: int,
+                         pitcher_team_id: int | None) -> None:
+    """Pull one pitcher's history against every position player on one
+    team's active roster, and store it exactly the way the nightly job
+    does (same parsing, same tables). Done once per pitcher/team per
+    BVP_FETCH_CACHE_SECONDS; MLB calls run a few at a time in parallel so
+    the first view of a reliever takes a couple of seconds, not ~10."""
+    key = ("bvp-fetched", pitcher_id, opponent_team_id)
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < BVP_FETCH_CACHE_SECONDS:
+            return
+
+    with _bvp_fetch_lock:  # two visitors picking the same reliever at once fetch it once
+        with _cache_lock:
+            hit = _cache.get(key)
+            if hit and time.time() - hit[0] < BVP_FETCH_CACHE_SECONDS:
+                return
+
+        batters = [p for p in _team_roster(opponent_team_id)
+                   if p["position_type"] != "Pitcher" and p["id"]]
+        pitcher_name = _person(pitcher_id).get("full_name") or "Unknown"
+
+        def pull(batter_id):
+            try:
+                return mlb_api.get_vs_player(batter_id, pitcher_id)
+            except Exception as exc:
+                print(f"    skip batter={batter_id} pitcher={pitcher_id}: {exc}")
+                return None
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            raws = list(pool.map(pull, [b["id"] for b in batters]))
+
+        conn = db_module.connect(DB_PATH)
+        try:
+            # Same write order as ingest_daily.py: players and teams a row
+            # points at must exist before the row itself (foreign keys).
+            db_module.upsert_player(conn, pitcher_id, pitcher_name,
+                                    role="pitcher", team_id=pitcher_team_id)
+            for b in batters:
+                db_module.upsert_player(conn, b["id"], b["full_name"],
+                                        role="batter", team_id=opponent_team_id)
+            for raw in raws:
+                if raw is None:
+                    continue
+                career, seasons = parsing.parse_vs_player(raw)
+                if career is None:
+                    continue  # never faced each other
+                db_module.upsert_matchup_career(conn, career)
+                for s in seasons:
+                    if s.get("team_id") is not None:
+                        db_module.upsert_team(conn, s["team_id"], s.get("team_name") or "Unknown")
+                    if s.get("opponent_id") is not None:
+                        db_module.upsert_team(conn, s["opponent_id"], s.get("opponent_name") or "Unknown")
+                    db_module.upsert_matchup_season(conn, s)
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Only remember it as done if every call worked -- otherwise the
+        # next visitor retries the whole thing.
+        if all(r is not None for r in raws):
+            with _cache_lock:
+                _cache[key] = (time.time(), True)
+
+
+@app.get("/api/pitcher")
+def pitcher_overview_route():
+    """The starter overview card: throwing hand, this regular season's
+    ERA/WHIP/K9/innings, last 5 starts (regular season + postseason)
+    ERA/WHIP/K9 + innings per start, and career ERA. Straight from MLB's
+    own season/career/game-log stats, cached for an hour."""
+    pitcher_id = request.args.get("id", type=int)
+    if not pitcher_id:
+        return jsonify({"error": "id query param (pitcher id) is required"}), 400
+    game_date = request.args.get("date")
+    season = _season_from(game_date)
+
+    def build():
+        person = parsing.parse_person_throws(mlb_api.get_person(pitcher_id))
+        totals = parsing.parse_pitching_totals(
+            mlb_api.get_pitching_stats(pitcher_id, season, "season,career",
+                                       mlb_api.REGULAR_SEASON))
+        gamelog = parsing.parse_pitching_gamelog(
+            mlb_api.get_pitching_stats(pitcher_id, season, "gameLog",
+                                       mlb_api.REGULAR_AND_POSTSEASON))
+        return {
+            "id": pitcher_id,
+            "name": person["full_name"],
+            "throws": person["throws"],
+            "season_year": season,
+            **bullpen_module.pitcher_overview(totals, gamelog, n=5, before_date=game_date),
+        }
+
+    try:
+        return jsonify(_cached(("pitcher", pitcher_id, game_date), STATS_CACHE_SECONDS, build))
+    except Exception as exc:
+        print(f"[pitcher overview] {pitcher_id}: {exc}")
+        return jsonify({"error": "Couldn't load this pitcher's stats from MLB right now."}), 502
+
+
+@app.get("/api/staff")
+def staff_route():
+    """Every pitcher on a team's active roster, busiest first (appearances,
+    then pitches, over the same trailing week Bullpen Watch uses) -- the
+    pitcher dropdown's bullpen list. Throwing hand isn't included (it'd be
+    one MLB call per pitcher); the matchup table doesn't depend on it."""
+    team_id = request.args.get("team", type=int)
+    game_date = request.args.get("date")
+    if not team_id or not game_date:
+        return jsonify({"error": "team and date query params are required"}), 400
+
+    try:
+        roster = [p for p in _team_roster(team_id) if p["position_type"] == "Pitcher" and p["id"]]
+    except Exception as exc:
+        print(f"[staff] team={team_id}: {exc}")
+        return jsonify({"error": "Couldn't load this team's roster from MLB right now."}), 502
+
+    start, end = _window(game_date)
+    usage = {
+        r["pitcher_id"]: r
+        for r in query_db(
+            """
+            SELECT pitcher_id, COUNT(*) AS appearances, SUM(pitches) AS pitches,
+                   MAX(game_date) AS last_appearance
+            FROM pitcher_appearances
+            WHERE team_id = ? AND game_date BETWEEN ? AND ?
+            GROUP BY pitcher_id
+            """,
+            (team_id, start, end),
+        )
+    }
+    pitchers = []
+    for p in roster:
+        u = usage.get(p["id"]) or {}
+        pitchers.append({
+            "id": p["id"],
+            "name": p["full_name"],
+            "appearances": u.get("appearances") or 0,
+            "pitches": u.get("pitches") or 0,
+            "last_appearance": u.get("last_appearance"),
+        })
+    pitchers.sort(key=lambda x: (-x["appearances"], -x["pitches"], x["name"] or ""))
+    return jsonify({"team_id": team_id, "window_days": BULLPEN_WINDOW_DAYS, "pitchers": pitchers})
 
 
 @app.get("/api/bullpen")

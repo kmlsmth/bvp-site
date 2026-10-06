@@ -174,6 +174,25 @@
     .lineup-card li { font-size: 12.5px; gap: 5px; }
   }
 
+  /* ---- Starting pitchers overview (game page) ----
+     Side by side on wide screens, stacked on phones: each card is a small
+     4-column stat table, which needs the full width to stay readable. */
+  .sp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 640px) { .sp-grid { grid-template-columns: 1fr; } }
+  .sp-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .sp-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .sp-name { font-family: var(--font-display); font-size: 16.5px; font-weight: 600; }
+  .sp-hand { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+  .sp-team { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .sp-stats { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; }
+  .sp-stats th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; text-align: right; padding: 0 0 6px 6px; white-space: nowrap; }
+  .sp-stats th .info-tip { vertical-align: -3px; margin-left: 2px; }
+  .sp-stats td { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; padding: 6px 0 6px 6px; border-top: 1px solid var(--line); white-space: nowrap; }
+  .sp-stats th:first-child, .sp-stats td:first-child { text-align: left; padding-left: 0; font-family: var(--font-body); }
+  .sp-stats td:first-child { color: var(--muted); font-size: 12px; white-space: normal; }
+  .sp-foot { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .sp-tba { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
   .empty-day { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; }
   .date-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .date-row input[type="date"] { font-family: var(--font-mono); font-size: 14px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 10px; }
@@ -340,9 +359,24 @@
     return gamesCache[date];
   }
 
-  function fetchLineup(pitcherId, opponentTeamId) {
-    return fetch("/api/lineup?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId)
+  // pitcherTeamId set = "this is a bullpen arm": the server pulls his
+  // matchup history on the spot the first time (starters' history is
+  // already pulled by the nightly job).
+  function fetchLineup(pitcherId, opponentTeamId, pitcherTeamId) {
+    var url = "/api/lineup?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId;
+    if (pitcherTeamId) url += "&fetch=1&pitcher_team=" + pitcherTeamId;
+    return fetch(url)
       .then(function (r) { if (!r.ok) throw new Error("lineup request failed"); return r.json(); });
+  }
+
+  function fetchPitcherOverview(pitcherId, date) {
+    return fetch("/api/pitcher?id=" + pitcherId + "&date=" + encodeURIComponent(date))
+      .then(function (r) { if (!r.ok) throw new Error("pitcher request failed"); return r.json(); });
+  }
+
+  function fetchStaff(teamId, date) {
+    return fetch("/api/staff?team=" + teamId + "&date=" + encodeURIComponent(date))
+      .then(function (r) { if (!r.ok) throw new Error("staff request failed"); return r.json(); });
   }
 
   function fetchBullpen(teamId, date) {
@@ -469,12 +503,6 @@
     return parts.length ? '<div class="bullpen-badges">' + parts.join("") + '</div>' : "";
   }
 
-  function recentFormText(form) {
-    if (!form || !form.starts_counted) return "";
-    return '<span class="recent-form-note">Last ' + form.starts_counted +
-      ' start' + (form.starts_counted === 1 ? "" : "s") + ': ' +
-      form.era + ' ERA &middot; ' + form.whip + ' WHIP &middot; ' + form.k9 + ' K/9</span>';
-  }
 
   // ---- Routing: "#/" = home, "#/game/<date>/<gamePk>/<pitcherId?>" = game page ----
   function route() {
@@ -593,7 +621,8 @@
         return;
       }
       var pitchers = pitchersForGame(game);
-      var startPitcherId = pitcherId || game.away_probable_pitcher_id || game.home_probable_pitcher_id || null;
+      var isListed = pitchers.some(function (p) { return p.id === pitcherId; });
+      var startPitcherId = (isListed ? pitcherId : null) || game.away_probable_pitcher_id || game.home_probable_pitcher_id || null;
       renderGame(game, pitchers, startPitcherId);
     }).catch(function () {
       app.innerHTML = '<div class="empty-day">Couldn’t load this game right now. Try reloading the page.</div>';
@@ -621,15 +650,14 @@
       '</div>'
     ));
 
+    app.appendChild(el('<div class="section-label">Starting Pitchers</div>'));
+    app.appendChild(renderStarterCards(game));
+
     app.appendChild(el('<div class="section-label">Weather</div>'));
     app.appendChild(renderWeatherCard(game));
 
     app.appendChild(el('<div class="section-label">Batter vs. Pitcher</div>'));
-    if (!pitchers.length) {
-      app.appendChild(el('<div class="empty-day">No probable pitchers announced yet for this date.</div>'));
-    } else {
-      app.appendChild(renderBvpSection(game, pitchers, startPitcherId));
-    }
+    app.appendChild(renderBvpSection(game, pitchers, startPitcherId));
 
     app.appendChild(el('<div class="section-label">Starting Lineups</div>'));
     app.appendChild(renderLineupsSection(game));
@@ -638,39 +666,90 @@
     app.appendChild(renderBullpenSection(game));
 
     app.appendChild(el('<p class="tabs-note">More planned here — lineup confirmations and market data.</p>'));
-    scheduleOverflowReport();
   }
 
-  // TEMPORARY diagnostic (remove once the iPhone sideways-scroll bug is
-  // confirmed gone): a few seconds after a game page renders, measure
-  // whether anything sticks out past the right edge of the screen and
-  // record it as a request path the server's HTTP log captures, e.g.
-  // GET /__ovf/iw393-sw393-ok. That lets the real iPhone layout (WebKit,
-  // which differs from desktop Chrome) be checked from the hosting logs
-  // without anyone taking screenshots. Contains only screen width and CSS
-  // class names -- nothing about the visitor. Once per page load.
-  var overflowReported = false;
-  function scheduleOverflowReport() {
-    if (overflowReported) return;
-    overflowReported = true;
-    setTimeout(function () {
-      try {
-        var iw = window.innerWidth;
-        var sw = document.documentElement.scrollWidth;
-        var parts = [];
-        var nodes = app.querySelectorAll("*");
-        for (var i = 0; i < nodes.length && parts.length < 6; i++) {
-          var n = nodes[i];
-          if (n.parentElement && n.parentElement.closest(".table-scroll")) continue;
-          var r = n.getBoundingClientRect();
-          if (!r.width || r.right <= iw + 1) continue;
-          var cls = (typeof n.className === "string" && n.className) ? n.className.split(" ")[0] : "";
-          parts.push(n.tagName.toLowerCase() + (cls ? "." + cls : "") + "~" + Math.round(r.width) + "r" + Math.round(r.right));
-        }
-        var msg = "iw" + iw + "-sw" + sw + "-" + (parts.length ? parts.join("_") : "ok");
-        fetch("/__ovf/" + encodeURIComponent(msg.slice(0, 400)), { keepalive: true }).catch(function () {});
-      } catch (e) { /* diagnostic only */ }
-    }, 4000);
+  // ---- Starting pitchers overview ----
+  // Plain-language explainers for the "i" on each column -- the same
+  // reasoning as the HR factor tooltip: if a number needs explaining once,
+  // every visitor has the same question.
+  var SP_TIPS = {
+    era: "ERA (earned run average): earned runs he allows per 9 innings. " +
+      "Lower is better -- a typical MLB starter is around 4.00. Over just 5 " +
+      "starts it swings a lot (one bad inning can double it), so read it " +
+      "next to WHIP and K/9.",
+    whip: "WHIP: walks plus hits per inning pitched -- how many batters reach " +
+      "base against him each inning. Lower is better: about 1.00 is " +
+      "excellent, a typical starter is around 1.25 to 1.30. Steadier than " +
+      "ERA, since it doesn't depend on whether those runners later scored.",
+    k9: "K/9: strikeouts per 9 innings. Higher is better: a typical pitcher " +
+      "is around 8.5 to 9, and 10+ is a big strikeout arm. Strikeouts are " +
+      "the outcome a pitcher controls most directly.",
+    ip: "Innings pitched. Season row: his total this regular season, i.e. how " +
+      "much those numbers are based on. Last-5 row: average per start " +
+      "(\"5.1\" = 5 1/3 innings) -- how deep he's going lately, and how " +
+      "much of the game is left to the bullpen."
+  };
+
+  function renderStarterCards(game) {
+    var grid = el('<div class="sp-grid"></div>');
+    [
+      { id: game.away_probable_pitcher_id, name: game.away_probable_pitcher, team: game.away_team },
+      { id: game.home_probable_pitcher_id, name: game.home_probable_pitcher, team: game.home_team }
+    ].forEach(function (sp) {
+      var card = el('<div class="sp-card"></div>');
+      grid.appendChild(card);
+      if (!sp.id) {
+        card.innerHTML = '<div class="sp-team">' + escapeHtml(sp.team) + '</div>' +
+          '<div class="sp-tba">Starter not announced yet.</div>';
+        return;
+      }
+      card.innerHTML = '<div class="sp-head"><span class="sp-name">' + escapeHtml(sp.name) + '</span></div>' +
+        '<div class="sp-team">' + escapeHtml(sp.team) + '</div>' +
+        '<div class="loading">Loading stats&hellip;</div>';
+      fetchPitcherOverview(sp.id, game.game_date).then(function (p) {
+        card.innerHTML = starterCardHtml(p, sp);
+      }).catch(function () {
+        card.querySelector(".loading").outerHTML = '<div class="sp-tba">Stats unavailable right now.</div>';
+      });
+    });
+    return grid;
+  }
+
+  function shortDate(iso) {
+    var d = new Date(iso + "T12:00:00");
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  function starterCardHtml(p, sp) {
+    function v(line, key) { return line && line[key] ? line[key] : "–"; }
+    var hand = p.throws === "L" ? "LHP" : p.throws === "R" ? "RHP" : "";
+    var last = p.last_starts;
+    var lastLabel = last ? "Last " + last.starts_counted + " start" + (last.starts_counted === 1 ? "" : "s") : "Last 5 starts";
+
+    var foot = [];
+    if (p.career && p.career.era) foot.push("Career ERA " + p.career.era);
+    if (last && last.from_date) {
+      foot.push("Last " + (last.starts_counted === 1 ? "start " + shortDate(last.to_date)
+        : last.starts_counted + ": " + shortDate(last.from_date) + " – " + shortDate(last.to_date)) +
+        (last.postseason_starts ? ", incl. " + last.postseason_starts + " postseason" : ""));
+    }
+
+    return '<div class="sp-head"><span class="sp-name">' + escapeHtml(p.name || sp.name) + '</span>' +
+        (hand ? '<span class="sp-hand">' + hand + '</span>' : "") + '</div>' +
+      '<div class="sp-team">' + escapeHtml(sp.team) + '</div>' +
+      '<table class="sp-stats"><thead><tr><th></th>' +
+        '<th>ERA' + infoTip(SP_TIPS.era) + '</th>' +
+        '<th>WHIP' + infoTip(SP_TIPS.whip) + '</th>' +
+        '<th>K/9' + infoTip(SP_TIPS.k9) + '</th>' +
+        '<th>IP' + infoTip(SP_TIPS.ip) + '</th>' +
+      '</tr></thead><tbody>' +
+        '<tr><td>' + p.season_year + ' season</td><td>' + v(p.season, "era") + '</td><td>' +
+          v(p.season, "whip") + '</td><td>' + v(p.season, "k9") + '</td><td>' + v(p.season, "ip_display") + '</td></tr>' +
+        '<tr><td>' + lastLabel + '</td><td>' + v(last, "era") + '</td><td>' +
+          v(last, "whip") + '</td><td>' + v(last, "k9") + '</td><td>' +
+          (last ? last.ip_per_start + '<span style="color:var(--muted)">/start</span>' : "–") + '</td></tr>' +
+      '</tbody></table>' +
+      (foot.length ? '<div class="sp-foot">' + foot.join(" &middot; ") + '</div>' : "");
   }
 
   function fatigueSummaryText(fatigue) {
@@ -780,46 +859,89 @@
     return wrap;
   }
 
+  // The dropdown: one group per team -- that team's probable starter
+  // first, then the rest of its active pitching staff (the bullpen),
+  // busiest over the last week first, since those are the arms most
+  // likely to actually come in. Bullpen arms load in a moment after the
+  // page (one roster lookup per team) without resetting the selection.
   function renderBvpSection(game, pitchers, startPitcherId) {
     var wrap = el('<div style="display:flex;flex-direction:column;gap:12px"></div>');
 
-    var options = pitchers.map(function (p) {
-      var sel = p.id === startPitcherId ? " selected" : "";
-      return '<option value="' + p.id + '"' + sel + '>' + escapeHtml(p.name) + ' (' + escapeHtml(p.team) + ') — vs ' + escapeHtml(p.opp) + '</option>';
-    }).join("");
+    var teams = [
+      { id: game.away_team_id, name: game.away_team, opp: game.home_team, oppId: game.home_team_id },
+      { id: game.home_team_id, name: game.home_team, opp: game.away_team, oppId: game.away_team_id }
+    ];
+    var entries = pitchers.map(function (p) {
+      return { id: p.id, name: p.name, teamId: p.teamId, team: p.team, opp: p.opp, oppId: p.oppId, isStarter: true };
+    });
+
     var switcher = el(
       '<div class="pitcher-switch">' +
         '<label for="pitcher-select">Viewing lineup vs.</label>' +
-        '<select id="pitcher-select">' + options + '</select>' +
+        '<select id="pitcher-select"></select>' +
       '</div>'
     );
     wrap.appendChild(switcher);
+    var select = switcher.querySelector("select");
+    if (!startPitcherId) {
+      select.appendChild(el('<option value="" selected disabled>Pick a pitcher</option>'));
+    }
+    var groups = {};
+    teams.forEach(function (t) {
+      var g = document.createElement("optgroup");
+      g.label = t.name + " pitchers";
+      groups[t.id] = g;
+      select.appendChild(g);
+    });
+    entries.forEach(function (e) {
+      var o = document.createElement("option");
+      o.value = e.id;
+      o.textContent = e.name + " — starter";
+      if (e.id === startPitcherId) o.selected = true;
+      groups[e.teamId].appendChild(o);
+    });
 
     var captionHost = el('<div class="lineup-caption"></div>');
     wrap.appendChild(captionHost);
     var tableHost = el('<div></div>');
     wrap.appendChild(tableHost);
 
-    var select = switcher.querySelector("select");
+    if (!startPitcherId) {
+      captionHost.textContent = "No probable starters announced yet -- pick any pitcher above to see how this lineup has hit him.";
+    }
 
+    teams.forEach(function (t) {
+      fetchStaff(t.id, game.game_date).then(function (data) {
+        data.pitchers.forEach(function (p) {
+          if (entries.some(function (e) { return e.id === p.id; })) return;  // the starter, already listed
+          entries.push({ id: p.id, name: p.name, teamId: t.id, team: t.name, opp: t.opp, oppId: t.oppId, isStarter: false });
+          var o = document.createElement("option");
+          o.value = p.id;
+          o.textContent = p.name + (p.appearances ? " · " + p.appearances + " G last 7d" : "");
+          groups[t.id].appendChild(o);
+        });
+      }).catch(function () { /* starters still work; bullpen just isn't listed */ });
+    });
+
+    var requestSeq = 0;
     function loadPitcher(pitcherId) {
-      var entry = pitchers.filter(function (p) { return p.id === pitcherId; })[0];
+      var entry = entries.filter(function (p) { return p.id === pitcherId; })[0];
       if (!entry) return;
-      if (entry.gamePk !== game.game_pk) {
-        // This pitcher is in a different game today -- jump there so the
-        // header/venue/weather all match what's actually being shown.
-        location.hash = "#/game/" + currentDate + "/" + entry.gamePk + "/" + entry.id;
-        return;
-      }
-      captionHost.innerHTML = 'Every <strong>' + escapeHtml(entry.opp) + '</strong> batter against <strong>' + escapeHtml(entry.name) + '</strong>.';
-      tableHost.innerHTML = '<div class="loading">Loading full stat line&hellip;</div>';
-      fetchLineup(entry.id, entry.oppId).then(function (data) {
+      var seq = ++requestSeq;  // a slow reliever lookup mustn't overwrite a later pick
+      captionHost.innerHTML = 'Every <strong>' + escapeHtml(entry.opp) + '</strong> batter against <strong>' +
+        escapeHtml(entry.name) + '</strong>' + (entry.isStarter ? "" : " (" + escapeHtml(entry.team) + " bullpen)") + '.';
+      tableHost.innerHTML = entry.isStarter
+        ? '<div class="loading">Loading full stat line&hellip;</div>'
+        : '<div class="loading">Pulling ' + escapeHtml(entry.name) + '’s history against this lineup&hellip; the first look can take a few seconds.</div>';
+      fetchLineup(entry.id, entry.oppId, entry.isStarter ? null : entry.teamId).then(function (data) {
+        if (seq !== requestSeq) return;
         tableHost.innerHTML = "";
         tableHost.appendChild(buildLineupTable(data));
-        if (data.pitcher && data.pitcher.recent_form) {
-          captionHost.innerHTML += recentFormText(data.pitcher.recent_form);
+        if (data.fetch_warning) {
+          tableHost.appendChild(el('<div class="no-history-note">' + escapeHtml(data.fetch_warning) + '</div>'));
         }
       }).catch(function () {
+        if (seq !== requestSeq) return;
         tableHost.innerHTML = '<div class="empty-day">Couldn’t load this lineup right now.</div>';
       });
     }
@@ -870,7 +992,9 @@
     var wrap = document.createElement("div");
     wrap.style.display = "flex"; wrap.style.flexDirection = "column"; wrap.style.gap = "8px";
     wrap.appendChild(scroll);
-    if (!data.rows.length) {
+    if (!data.rows.length && data.no_history && data.no_history.length) {
+      wrap.appendChild(el('<div class="no-history-note">None of these hitters has faced him yet: ' + data.no_history.map(function (b) { return escapeHtml(b.name); }).join(", ") + '</div>'));
+    } else if (!data.rows.length) {
       wrap.appendChild(el('<div class="no-history-note">No roster data yet for this matchup — check back closer to game time.</div>'));
     } else if (data.no_history && data.no_history.length) {
       wrap.appendChild(el('<div class="no-history-note">No recorded at-bats yet: ' + data.no_history.map(function (b) { return escapeHtml(b.name); }).join(", ") + '</div>'));

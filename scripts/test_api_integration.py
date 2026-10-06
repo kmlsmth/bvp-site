@@ -134,7 +134,124 @@ def main() -> None:
     assert form["era"] == "3.86", form["era"]
     print(f"/api/lineup OK: recent_form={form}")
 
+    test_live_mlb_endpoints(client)
+
     print("\nAll API integration tests passed.")
+
+
+def test_live_mlb_endpoints(client) -> None:
+    """/api/pitcher, /api/staff and /api/lineup?fetch=1 call MLB live, so
+    the network layer (mlb_api) is stubbed with small canned responses
+    shaped like the real ones (field names checked against live calls)."""
+    import mlb_api
+    calls = {"vs": 0}
+
+    def fake_person(pid):
+        return {"people": [{"id": pid, "fullName": "Relief Arm" if pid == 555666 else "Blake Snell",
+                            "pitchHand": {"code": "L", "description": "Left"}}]}
+
+    def fake_pitching(pid, season, stat_types, game_types="R"):
+        if stat_types == "season,career":
+            assert game_types == "R", game_types  # season line is regular season only
+            return {"stats": [
+                {"type": {"displayName": "season"}, "splits": [{"stat": {
+                    "outs": 540, "earnedRuns": 60, "hits": 130, "baseOnBalls": 50,
+                    "strikeOuts": 200, "gamesStarted": 30}}]},
+                {"type": {"displayName": "career"}, "splits": [{"stat": {
+                    "outs": 3000, "earnedRuns": 330, "hits": 800, "baseOnBalls": 400,
+                    "strikeOuts": 1200, "gamesStarted": 170}}]},
+            ]}
+        assert stat_types == "gameLog" and "D" in game_types, (stat_types, game_types)
+        log = [{"date": f"2026-09-{d:02d}", "gameType": "R", "game": {"gamePk": d},
+                "stat": {"gamesStarted": 1, "outs": 18, "earnedRuns": 2, "hits": 5,
+                         "baseOnBalls": 2, "strikeOuts": 7}} for d in (1, 7, 13, 19, 25)]
+        log.append({"date": "2026-10-03", "gameType": "D", "game": {"gamePk": 99},
+                    "stat": {"gamesStarted": 1, "outs": 15, "earnedRuns": 0, "hits": 3,
+                             "baseOnBalls": 1, "strikeOuts": 9}})
+        log.append({"date": "2026-09-28", "gameType": "R", "game": {"gamePk": 98},
+                    "stat": {"gamesStarted": 0, "outs": 3, "earnedRuns": 4, "hits": 4,
+                             "baseOnBalls": 0, "strikeOuts": 0}})  # relief outing: excluded
+        return {"stats": [{"type": {"displayName": "gameLog"}, "splits": log}]}
+
+    def fake_roster(team_id, roster_type="active"):
+        if team_id == 147:
+            return {"roster": [
+                {"person": {"id": 605483, "fullName": "Blake Snell"}, "position": {"type": "Pitcher"}},
+                {"person": {"id": 111222, "fullName": "Home Reliever"}, "position": {"type": "Pitcher"}},
+                {"person": {"id": 555666, "fullName": "Relief Arm"}, "position": {"type": "Pitcher"}},
+                {"person": {"id": 147001, "fullName": "Home Hitter"}, "position": {"type": "Outfielder"}},
+            ]}
+        return {"roster": [
+            {"person": {"id": 139001, "fullName": "Away Hitter One"}, "position": {"type": "Infielder"}},
+            {"person": {"id": 139002, "fullName": "Away Hitter Two"}, "position": {"type": "Catcher"}},
+            {"person": {"id": 333444, "fullName": "Away Reliever"}, "position": {"type": "Pitcher"}},
+        ]}
+
+    def fake_vs(batter_id, pitcher_id):
+        calls["vs"] += 1
+        if batter_id == 139002:
+            return {"stats": []}  # never faced him
+        return {"stats": [
+            {"type": {"displayName": "vsPlayerTotal"}, "splits": [{
+                "batter": {"id": batter_id}, "pitcher": {"id": pitcher_id},
+                "stat": {"gamesPlayed": 3, "plateAppearances": 7, "atBats": 6, "hits": 2,
+                         "homeRuns": 1, "baseOnBalls": 1, "strikeOuts": 2, "avg": ".333"}}]},
+            {"type": {"displayName": "vsPlayer"}, "splits": [{
+                "season": "2025", "batter": {"id": batter_id}, "pitcher": {"id": pitcher_id},
+                "team": {"id": 139, "name": "Tampa Bay Rays"},
+                "opponent": {"id": 147, "name": "New York Yankees"},
+                "stat": {"gamesPlayed": 3, "plateAppearances": 7, "atBats": 6, "hits": 2,
+                         "homeRuns": 1, "baseOnBalls": 1, "strikeOuts": 2, "avg": ".333"}}]},
+        ]}
+
+    mlb_api.get_person = fake_person
+    mlb_api.get_pitching_stats = fake_pitching
+    mlb_api.get_team_roster = fake_roster
+    mlb_api.get_vs_player = fake_vs
+
+    # --- /api/pitcher: starter overview card ----------------------------
+    resp = client.get("/api/pitcher?id=605483&date=2026-10-05")
+    assert resp.status_code == 200, resp.status_code
+    p = resp.get_json()
+    assert p["throws"] == "L" and p["season_year"] == 2026, p
+    # Season: 540 outs = 180 IP, 60 ER -> 3.00 ERA; (130+50)/180 = 1.00 WHIP; 200*9/180 = 10.0
+    assert p["season"]["era"] == "3.00" and p["season"]["whip"] == "1.00", p["season"]
+    assert p["season"]["k9"] == "10.0" and p["season"]["ip_display"] == "180.0", p["season"]
+    assert p["career"]["era"] == "2.97", p["career"]  # 330*9/1000
+    last = p["last_starts"]
+    # Last 5 STARTS by date: 10-03 (postseason), 09-25, 09-19, 09-13, 09-07 --
+    # NOT the 09-28 relief outing and NOT the oldest start (09-01).
+    assert last["starts_counted"] == 5 and last["postseason_starts"] == 1, last
+    assert last["from_date"] == "2026-09-07" and last["to_date"] == "2026-10-03", last
+    # outs 15+18*4 = 87 (29 IP), ER 8 -> 2.48 ERA; 87/5 = 17.4 -> 17 outs -> "5.2"
+    assert last["era"] == "2.48" and last["ip_per_start"] == "5.2", last
+    print(f"/api/pitcher OK: season ERA {p['season']['era']}, last 5 ERA {last['era']} "
+          f"({last['ip_per_start']} IP/start), career {p['career']['era']}")
+
+    # --- /api/staff: whole pitching staff, busiest first ----------------
+    resp = client.get("/api/staff?team=147&date=2026-10-05")
+    assert resp.status_code == 200, resp.status_code
+    staff = resp.get_json()["pitchers"]
+    names = [s["name"] for s in staff]
+    assert "Home Hitter" not in names, names
+    assert names[0] in ("Home Reliever", "Blake Snell"), names  # both pitched twice this week
+    assert names[-1] == "Relief Arm" and staff[-1]["appearances"] == 0, staff
+    print(f"/api/staff OK: {[(s['name'], s['appearances'], s['pitches']) for s in staff]}")
+
+    # --- /api/lineup?fetch=1: a reliever with no stored history ---------
+    resp = client.get("/api/lineup?pitcher=555666&opponent_team=139&fetch=1&pitcher_team=147")
+    assert resp.status_code == 200, resp.status_code
+    lu = resp.get_json()
+    assert lu["pitcher"]["name"] == "Relief Arm", lu["pitcher"]
+    assert lu["fetch_warning"] is None, lu["fetch_warning"]
+    assert [r["name"] for r in lu["rows"]] == ["Away Hitter One"], lu["rows"]
+    assert lu["rows"][0]["stats"]["h"] == 2, lu["rows"][0]["stats"]
+    assert [b["name"] for b in lu["no_history"]] == ["Away Hitter Two"], lu["no_history"]
+    assert calls["vs"] == 2, calls  # only the two position players, not the pitcher
+    # Second view: already fetched -> no new MLB calls.
+    client.get("/api/lineup?pitcher=555666&opponent_team=139&fetch=1&pitcher_team=147")
+    assert calls["vs"] == 2, calls
+    print(f"/api/lineup?fetch=1 OK: {lu['rows'][0]['name']} 2-for-6 vs reliever, cached on re-view")
 
 
 if __name__ == "__main__":

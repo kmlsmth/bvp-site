@@ -88,6 +88,39 @@ def get_team_schedule_range(team_id: int, start_date: str, end_date: str) -> dic
     return resp.json()
 
 
+def get_person(person_id: int) -> dict:
+    """One player's bio record -- used for a pitcher's throwing hand
+    (people[0].pitchHand.code, "L"/"R")."""
+    url = f"{BASE_URL}/people/{person_id}"
+    resp = requests.get(url, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+# MLB game-type codes: R = regular season; F/D/L/W = the four postseason
+# rounds (Wild Card, Division Series, LCS, World Series). Verified live:
+# passing them comma-separated returns one combined, per-game log.
+REGULAR_SEASON = "R"
+REGULAR_AND_POSTSEASON = "R,F,D,L,W"
+
+
+def get_pitching_stats(pitcher_id: int, season: int, stat_types: str,
+                       game_types: str = REGULAR_SEASON) -> dict:
+    """A pitcher's own pitching stats. stat_types is MLB's comma list, e.g.
+    "season,career" (one totals line each) or "gameLog" (one line per
+    game, with gamesStarted/outs/earnedRuns/hits/baseOnBalls/strikeOuts)."""
+    url = f"{BASE_URL}/people/{pitcher_id}/stats"
+    params = {
+        "stats": stat_types,
+        "group": "pitching",
+        "season": season,
+        "gameType": game_types,
+    }
+    resp = requests.get(url, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def get_boxscore(game_pk: int) -> dict:
     """Full box score for one game: every pitcher's line (innings, pitches,
     runs, walks, strikeouts, hits) for both teams. This is the one new data

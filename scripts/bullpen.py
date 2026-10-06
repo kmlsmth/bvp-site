@@ -193,3 +193,60 @@ def compute_bullpen_fatigue(reliever_rows: list[dict], as_of_date: str,
         "weekly_pitches": int(weekly_pitches),
         "relievers_used": len(last_appearance),
     }
+
+
+# --- Starter overview card ---------------------------------------------
+
+POSTSEASON_GAME_TYPES = {"F", "D", "L", "W"}
+
+
+def _rate_line(raw: dict | None) -> dict | None:
+    """Rate stats for one totals row, or None if there's nothing to show
+    (no row at all, or zero outs recorded -- a 0.00 ERA over 0 innings
+    would read as a real, great number when it's really "no data")."""
+    if not raw or not _n(raw.get("outs")):
+        return None
+    return compute_pitching_rate_stats(raw)
+
+
+def pitcher_overview(totals: dict, gamelog: list[dict], n: int = 5,
+                     before_date: str | None = None) -> dict:
+    """The starter overview card's numbers.
+
+    totals: parsing.parse_pitching_totals() output (regular-season
+      "season" line and "career" line).
+    gamelog: parsing.parse_pitching_gamelog() rows, regular season AND
+      postseason -- so "last 5 starts" means his actual last 5 times on
+      the mound to start a game, playoffs included.
+
+    Last-n-starts is summed from raw counts and run through the same rate
+    math as everything else (never an average of per-game ERAs), plus an
+    innings-per-start figure: total outs / starts, rounded to the nearest
+    out and shown in baseball notation ("5.1" = 5 1/3 innings)."""
+    season = _rate_line(totals.get("season"))
+    if season is not None:
+        season["games_started"] = (totals.get("season") or {}).get("games_started")
+
+    career = _rate_line(totals.get("career"))
+
+    # before_date: the game being previewed. Its own start shows up in
+    # MLB's game log as soon as it begins (even mid-game), and the card is
+    # about how he's pitched coming INTO this game -- so leave it out.
+    starts = sorted(
+        (g for g in gamelog if g.get("started") and g.get("game_date")
+         and (before_date is None or g["game_date"] < before_date)),
+        key=lambda g: g["game_date"], reverse=True,
+    )[:n]
+    last = None
+    if starts:
+        summed = sum_pitching_counts(starts)
+        last = compute_pitching_rate_stats(summed)
+        last["starts_counted"] = len(starts)
+        last["postseason_starts"] = sum(
+            1 for g in starts if g.get("game_type") in POSTSEASON_GAME_TYPES)
+        last["ip_per_start"] = innings_pitched_display(
+            int(round(_n(summed.get("outs")) / len(starts))))
+        last["from_date"] = starts[-1]["game_date"]
+        last["to_date"] = starts[0]["game_date"]
+
+    return {"season": season, "last_starts": last, "career": career}

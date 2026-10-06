@@ -42,8 +42,10 @@ def get_arsenal_leaderboard(kind: str, season: int) -> str:
 
 
 def get_pitcher_pitches(pitcher_id: int, season: int) -> str:
-    """Every regular-season pitch he's thrown this season (one row each)."""
+    """Every pitch he's thrown this season, regular season and postseason
+    (one row each, with game_date) -- the postseason matters for his
+    recent pitch mix in October."""
     return _get_text(f"{BASE_URL}/statcast_search/csv", {
-        "all": "true", "hfGT": "R|", "hfSea": f"{season}|", "player_type": "pitcher",
+        "all": "true", "hfGT": "R|F|D|L|W|", "hfSea": f"{season}|", "player_type": "pitcher",
         "pitchers_lookup[]": pitcher_id, "type": "details",
     })

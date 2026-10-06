@@ -35,6 +35,9 @@ def test_parse_leaderboards():
 def test_usage_by_stand_parses_real_pitch_log():
     counts = pm.usage_by_stand((DATA / "sample_savant_pitches_peralta.csv").read_text())
     assert counts == {"L": {}, "R": {"FF": 2}}, counts
+    by_date = pm.usage_by_date((DATA / "sample_savant_pitches_peralta.csv").read_text())
+    assert by_date == {"2026-09-25": {"L": {}, "R": {"FF": 2}}}, by_date
+    assert pm.total_usage(by_date) == counts
     print("test_usage_by_stand_parses_real_pitch_log OK")
 
 
@@ -74,6 +77,40 @@ def test_no_data():
     print("test_no_data OK")
 
 
+def test_recent_mix_includes_postseason_and_blends():
+    """Real data: Chris Sale's 2026 pitch counts by game date. Before his
+    10/6 start, his last 5 outings include two Wild Card games."""
+    import json
+    fx = json.loads((DATA / "sample_usage_by_date_sale.json").read_text())
+    by = {d: day for d, day in fx["usage_by_date"].items()}
+    recent = pm.recent_dates(by, "2026-10-06")
+    assert recent == ["2026-10-01", "2026-09-29", "2026-09-23", "2026-09-11", "2026-09-04"], recent
+    assert [fx["game_types"][d] for d in recent[:2]] == ["F", "F"]
+    # Nothing on or after the game date counts (no peeking at tonight).
+    assert pm.recent_dates(by, "2026-09-29")[0] == "2026-09-23"
+    # Sliders to lefties: 267/677 = 39.4% on the season, 59/134 = 44.0% in
+    # the last 5; blended (59 + 100 x .394) / (134 + 100) = 42.1%.
+    season = pm.shares(pm.total_usage(by, "2026-10-06")["L"])
+    blend = pm.blended_shares(by, "L", "2026-10-06")
+    assert round(season["SL"], 3) == 0.394 and round(blend["SL"], 3) == 0.421, (season, blend)
+    assert abs(sum(blend.values()) - 1) < 1e-9
+    # No dates at all (old cache / missing column) -> plain season mix.
+    undated = {"": by["2026-09-23"]}
+    assert pm.blended_shares(undated, "R", "2026-10-06") == pm.shares(by["2026-09-23"]["R"])
+    print(f"test_recent_mix_includes_postseason_and_blends OK: Sale SL to LHH {season['SL']:.1%} season -> {blend['SL']:.1%}")
+
+
+def test_hitter_rows_combine_across_seasons():
+    a = {"FF": {"pa": 100, "pitches": 400, "xba": 0.300, "xslg": 0.500, "xwoba": 0.400}}
+    b = {"FF": {"pa": 100, "pitches": 400, "xba": 0.200, "xslg": 0.300, "xwoba": 0.300},
+         "SL": {"pa": 10, "pitches": 40, "xba": None, "xslg": None, "xwoba": 0.250}}
+    c = pm.combine_hitter_rows([(a, 1.0), (b, 0.6)])
+    assert c["FF"]["pa"] == 160 and abs(c["FF"]["xba"] - (30 + 12) / 160) < 1e-12, c
+    assert c["SL"]["pa"] == 6 and c["SL"]["xba"] is None and c["SL"]["xwoba"] == 0.25, c
+    assert pm.combine_hitter_rows([({}, 1.0)]) == {}
+    print("test_hitter_rows_combine_across_seasons OK")
+
+
 if __name__ == "__main__":
     test_parse_leaderboards()
     test_usage_by_stand_parses_real_pitch_log()
@@ -81,4 +118,6 @@ if __name__ == "__main__":
     test_rice_vs_peralta_mix()
     test_small_samples_barely_move_it()
     test_no_data()
+    test_recent_mix_includes_postseason_and_blends()
+    test_hitter_rows_combine_across_seasons()
     print("\nAll pitch-mix tests passed.")

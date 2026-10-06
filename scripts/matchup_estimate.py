@@ -184,9 +184,10 @@ def hr_chance_tonight(p_vs_pitcher: float, p_vs_rest: float, total_pa: float,
 # (HITTER_STABILIZE), so a 2-for-2 nudges it rather than swamping it.
 
 def h2h_counts(career: dict | None) -> dict | None:
-    """matchup_career row (this site's stored head-to-head totals) -> counts
-    in the same shape as hitting_counts(). Total bases are rebuilt from hit
-    types when MLB left that field out (it sometimes does)."""
+    """matchup_career or matchup_season row (this site's stored
+    head-to-head totals) -> counts in the same shape as hitting_counts().
+    Total bases are rebuilt from hit types when MLB left that field out (it
+    sometimes does)."""
     if not career:
         return None
     pa, ab = _i(career.get("plate_appearances")), _i(career.get("at_bats"))
@@ -214,3 +215,49 @@ def apply_h2h(est: dict, h2h: dict | None) -> dict:
             k = HITTER_STABILIZE[r]
             out[r] = (est[r] * k + h2h[r]) / (k + n)
     return out
+
+
+# Older head-to-head at-bats count for less: each year back is worth 90% of
+# the year after it, so a 2019 at-bat counts about half as much as one this
+# season (0.9 ** 7 = 0.48). This site's own choice.
+H2H_FADE_PER_YEAR = 0.9
+
+
+def h2h_faded(season_rows: list[dict], current_season: int) -> dict | None:
+    """matchup_season rows for one hitter vs one pitcher -> head-to-head
+    counts (floats), each season weighted by H2H_FADE_PER_YEAR per year of
+    age. None if there's nothing."""
+    total = None
+    for row in season_rows or []:
+        c = h2h_counts(row)
+        if not c:
+            continue
+        try:
+            age = max(0, current_season - int(row.get("season")))
+        except (TypeError, ValueError):
+            age = 0
+        w = H2H_FADE_PER_YEAR ** age
+        total = {k: (total[k] if total else 0) + w * v for k, v in c.items()}
+    return total if total and (total["pa"] or total["ab"]) else None
+
+
+# --- Past seasons ("Marcel" weighting) ----------------------------------
+# A hitter's 2026 split alone is often a few hundred plate appearances. The
+# two seasons before it are real evidence too, just older, so they're added
+# in at 5/4/3 weights -- this season counts fully, last season 80%, two
+# seasons ago 60% -- the weighting Tom Tango uses in his "Marcel" projection
+# system. The combined (weighted) counts are then regressed to league as
+# usual, so more history means less pulling toward average.
+SEASON_WEIGHTS = (1.0, 0.8, 0.6)   # this season, last season, two seasons ago
+
+
+def combine_seasons(counts_by_season: list[dict | None],
+                    weights: tuple | None = None) -> dict | None:
+    """[this season's counts, last season's, two seasons ago] (any can be
+    None) -> one weighted set of counts (floats), or None if all empty."""
+    total = None
+    for c, w in zip(counts_by_season, weights or SEASON_WEIGHTS):
+        if not c:
+            continue
+        total = {k: (total[k] if total else 0) + w * v for k, v in c.items()}
+    return total if total and total["pa"] else None

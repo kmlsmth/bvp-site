@@ -260,6 +260,9 @@ def test_live_mlb_endpoints(client) -> None:
 
     def fake_hitters(ids, season, sit_code):
         seen["sit_code"] = sit_code
+        seen.setdefault("seasons", set()).add(season)
+        if season < 2026:  # earlier seasons: in MLB, but no split vs this hand
+            return {"people": [{"id": 139001, "fullName": "Away Hitter One", "batSide": {"code": "S"}}]}
         return {"people": [
             {"id": 139001, "fullName": "Away Hitter One", "batSide": {"code": "S"},
              "stats": [{"splits": [{"split": {"code": sit_code}, "stat": {
@@ -270,6 +273,8 @@ def test_live_mlb_endpoints(client) -> None:
         ]}
 
     def fake_pitcher_vs(pid, season):
+        if season < 2026:
+            return {"stats": []}
         return {"stats": [{"splits": [
             {"split": {"code": "vl"}, "stat": {"battersFaced": 200, "atBats": 180, "hits": 40, "baseOnBalls": 15,
                                                "hitByPitch": 1, "strikeOuts": 60, "homeRuns": 5, "totalBases": 65}},
@@ -304,6 +309,7 @@ def test_live_mlb_endpoints(client) -> None:
     assert resp.status_code == 200, resp.status_code
     est = resp.get_json()
     assert est["pitcher"]["throws"] == "L" and seen["sit_code"] == "vl", (est["pitcher"], seen)
+    assert seen["seasons"] == {2026, 2025, 2024}, seen  # this season + the two before (5/4/3)
     assert est["league"]["obp"] == ".317" and est["mix_available"], est["league"]  # 1900/6000
     by_name = {r["name"]: r for r in est["rows"]}
     assert set(by_name) == {"Away Hitter One", "Away Hitter Two"}, by_name  # roster pitcher excluded
@@ -342,6 +348,19 @@ def test_live_mlb_endpoints(client) -> None:
     # Without the slider-heavy mix nudge, the same hitter estimates higher.
     assert one2["est"]["ops_num"] > one["est"]["ops_num"], (one2["est"], one["est"])
     print("/api/estimates without Statcast OK (falls back to handedness-only estimate)")
+
+    # MLB fails for the older seasons -> still served, on this season alone.
+    def flaky_hitters(ids, season, sit_code):
+        if season < 2026:
+            raise RuntimeError("timeout")
+        return fake_hitters(ids, season, sit_code)
+    mlb_api.get_hitters_vs_hand = flaky_hitters
+    app_module._cache.clear()
+    resp = client.get("/api/estimates?pitcher=555666&opponent_team=139&date=2026-10-05")
+    est3 = resp.get_json()
+    assert resp.status_code == 200 and len(est3["rows"]) == 2, est3
+    assert {r["name"]: r for r in est3["rows"]}["Away Hitter One"]["est"]["ops"] == one2["est"]["ops"]
+    print("/api/estimates with past seasons unavailable OK (this season only)")
 
 if __name__ == "__main__":
     main()

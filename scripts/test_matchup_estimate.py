@@ -137,6 +137,44 @@ def test_h2h_at_bats_count_but_dont_swamp():
     print(f"test_h2h_at_bats_count_but_dont_swamp OK: AVG {est['avg']:.4f} -> 2-for-2 {up['avg']:.4f}, 0-for-2 {down['avg']:.4f}")
 
 
+# Austin Riley vs RHP, real MLB lines: 2026 (above in the ATL fixture),
+# 2025 and 2024 -- [PA, AB, H, BB, HBP, SO, HR, TB].
+RILEY = {2026: [446, 405, 87, 30, 7, 141, 16, 151],
+         2025: [346, 320, 83, 22, 3, 106, 12, 138],
+         2024: [352, 323, 85, 24, 3, 93, 14, 150]}
+HIT_KEYS = ("plateAppearances", "atBats", "hits", "baseOnBalls", "hitByPitch", "strikeOuts", "homeRuns", "totalBases")
+
+
+def test_past_seasons_weighted_5_4_3():
+    """Kamil chose Marcel-style weighting: this season 5, last 4, the one
+    before 3 (1 / 0.8 / 0.6)."""
+    lines = [m.hitting_counts(dict(zip(HIT_KEYS, RILEY[y]))) for y in (2026, 2025, 2024)]
+    c = m.combine_seasons(lines)
+    assert abs(c["pa"] - (446 + 0.8 * 346 + 0.6 * 352)) < 1e-9 and abs(c["hr"] - (16 + 0.8 * 12 + 0.6 * 14)) < 1e-9, c
+    # Riley's 2026 vs RHP (.651 OPS) was his worst of the three (.743 / .782):
+    # the older seasons lift his projection, but 2026 still counts most.
+    now = m.estimate(lines[0], m.pitching_counts(PERALTA_VS_LHH), LEAGUE)
+    three = m.estimate(c, m.pitching_counts(PERALTA_VS_LHH), LEAGUE)
+    assert three["ob"] > now["ob"] and three["slg"] > now["slg"], (now, three)
+    # Missing seasons are skipped; nothing at all -> None.
+    assert m.combine_seasons([None, lines[1], None])["pa"] == 0.8 * 346
+    assert m.combine_seasons([None, None, None]) is None
+    print(f"test_past_seasons_weighted_5_4_3 OK: Riley {c['pa']:.0f} weighted PA; "
+          f"OPS est {now['ob'] + now['slg']:.3f} (2026 only) -> {three['ob'] + three['slg']:.3f}")
+
+
+def test_old_head_to_head_fades():
+    """A 2019 at-bat counts about half as much as a 2026 one (0.9 ** 7)."""
+    rows = [{"season": "2026", "plate_appearances": 4, "at_bats": 4, "hits": 2, "home_runs": 0, "total_bases": 2},
+            {"season": "2019", "plate_appearances": 4, "at_bats": 4, "hits": 2, "home_runs": 1, "total_bases": 5}]
+    f = m.h2h_faded(rows, 2026)
+    w = 0.9 ** 7
+    assert abs(f["ab"] - (4 + 4 * w)) < 1e-12 and abs(f["hr"] - w) < 1e-12 and abs(f["slg"] - (2 + 5 * w)) < 1e-12, f
+    assert round(w, 2) == 0.48
+    assert m.h2h_faded([], 2026) is None and m.h2h_faded(None, 2026) is None
+    print(f"test_old_head_to_head_fades OK: 8 AB (4 in 2026, 4 in 2019) count as {f['ab']:.2f}")
+
+
 if __name__ == "__main__":
     test_league_baseline()
     test_rice_vs_peralta_slash_line()
@@ -147,4 +185,6 @@ if __name__ == "__main__":
     test_switch_hitters_turn_around()
     test_traded_players_use_combined_split()
     test_h2h_at_bats_count_but_dont_swamp()
+    test_past_seasons_weighted_5_4_3()
+    test_old_head_to_head_fades()
     print("\nAll matchup estimate tests passed.")

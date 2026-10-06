@@ -3,7 +3,9 @@
 Yamamoto, captured 2026-10-06 (data/sample_estimates_atl_vs_yamamoto.json).
 MLB and Baseball Savant calls are stubbed to return those real responses,
 so everything else -- parsing, the odds-ratio estimate, the pitch-mix
-nudge, HR-tonight -- runs exactly as in production.
+nudge, HR-tonight -- runs exactly as in production. Includes the 2025 and
+2024 seasons (weighted 4 and 3 against this season's 5) and Yamamoto's
+pitch mix by game date (last 5 starts blended with his season).
 
 Run: python3 scripts/test_estimates_real.py   (prints the table)
 """
@@ -30,13 +32,47 @@ YAMAMOTO, BRAVES = 808967, 144
 mlb_api.get_team_roster = lambda team_id, roster_type="active": FX["roster"]
 mlb_api.get_person = lambda pid: {"people": [{"id": pid, "fullName": "Yoshinobu Yamamoto",
                                               "pitchHand": {"code": "R"}}]}
-mlb_api.get_hitters_vs_hand = lambda ids, season, code: FX["people"]
-mlb_api.get_pitcher_vs_hand = lambda pid, season: FX["pitcher_vs"]
+HIT_KEYS = ("plateAppearances", "atBats", "hits", "baseOnBalls", "hitByPitch", "strikeOuts", "homeRuns", "totalBases")
+PIT_KEYS = ("battersFaced",) + HIT_KEYS[1:]
+BATS = {p["id"]: p["batSide"]["code"] for p in FX["people"]["people"]}
+
+
+def _people(season: int) -> dict:
+    """MLB-shaped /people response: 2026 as captured; 2025/2024 rebuilt
+    from the captured counting lines (null = no line vs RHP that year)."""
+    if season == 2026:
+        return FX["people"]
+    return {"people": [{"id": pid, "batSide": {"code": BATS[pid]},
+                        "stats": [{"splits": [{"split": {"code": "vr"}, "stat": dict(zip(HIT_KEYS, line))}]}]
+                        if line else []}
+                       for pid, line in FX["past"][str(season)]["hitters_vs_rhp"]]}
+
+
+def _pitcher_vs(season: int) -> dict:
+    if season == 2026:
+        return FX["pitcher_vs"]
+    return {"stats": [{"splits": [{"split": {"code": code}, "stat": dict(zip(PIT_KEYS, line))}
+                                  for code, line in FX["past"][str(season)]["yamamoto_vs"]]}]}
+
+
+def _pitch_log(season: int) -> str:
+    return "pitch_type,game_date,stand\n" + "".join(
+        f"{pt},{day},{side}\n" * n for day, sides in FX["usage_by_date"].items()
+        for side, counts in sides.items() for pt, n in counts.items())
+
+
+def _board(kind: str, season: int) -> str:
+    if kind == "pitcher":
+        return FX["pitcher_csv"]
+    return FX["batter_csv"] if season == 2026 else FX["past"][str(season)]["batter_csv"]
+
+
+mlb_api.get_hitters_vs_hand = lambda ids, season, code: _people(season)
+mlb_api.get_pitcher_vs_hand = lambda pid, season: _pitcher_vs(season)
 mlb_api.get_league_team_hitting = lambda season: {"stats": [{"splits": [{"stat": FX["league"]}]}]}
 mlb_api.get_pitching_stats = lambda pid, season, types, game_types="R": FX["gamelog"]
-savant_api.get_arsenal_leaderboard = lambda kind, season: FX["batter_csv"] if kind == "batter" else FX["pitcher_csv"]
-savant_api.get_pitcher_pitches = lambda pid, season: "pitch_type,stand\n" + "".join(
-    f"{pt},{side}\n" * n for side, counts in FX["usage_counts"].items() for pt, n in counts.items())
+savant_api.get_arsenal_leaderboard = _board
+savant_api.get_pitcher_pitches = lambda pid, season: _pitch_log(season)
 
 from api.app import app  # noqa: E402
 
@@ -59,18 +95,25 @@ def main() -> None:
               + (f"{m['xwoba_vs_mix']} vs {m['xwoba_usual']}" if m else "-"))
 
     by = {r["name"]: r for r in rows}
-    # Sanity on real numbers: Baldwin (.888 OPS vs RHP, 391 PA) should rank
-    # near the top; Kim (.452 OPS in 81 PA) near the bottom but regressed
-    # well above his raw line; Tellez (9 PA) close to league average.
     names = [r["name"] for r in rows]
-    assert names.index("Drake Baldwin") <= 2, names
-    assert names.index("Ha-Seong Kim") >= len(names) - 3, names
-    assert float(by["Ha-Seong Kim"]["est"]["ops"]) > 0.452
-    assert abs(by["Rowdy Tellez"]["est"]["ops_num"] - d["league"]["ops_num"]) < 0.08, by["Rowdy Tellez"]["est"]
-    # Albies is a switch hitter -> bats left vs Yamamoto -> mix uses his vs-LHH pitches.
+    # Sanity on real numbers. Baldwin (.888 OPS vs RHP this year, .808 in
+    # 2025) near the top; Albies (under .700 vs RHP all three seasons, and
+    # a splitter-heavy mix he grades poorly against) at the bottom.
+    assert names.index("Drake Baldwin") <= 2 and names[-1] == "Ozzie Albies", names
+    # Past seasons count: Kim's 81 PA this year (.452 OPS) are backed by
+    # 469 PA in 2024-25 at ~.660, so he's projected well above his raw line.
+    assert float(by["Ha-Seong Kim"]["est"]["ops"]) > 0.600, by["Ha-Seong Kim"]["est"]
+    # Tellez: 9 PA this year (.958 OPS) don't drive it -- 663 PA from
+    # 2024-25 (~.700 OPS) do, against an elite pitcher -> below league.
+    assert by["Rowdy Tellez"]["est"]["ops_num"] < d["league"]["ops_num"] - 0.05, by["Rowdy Tellez"]["est"]
+    # The real 2026 line shown next to it is still this season only.
+    assert by["Rowdy Tellez"]["vs_hand"]["pa"] == 9 and by["Rowdy Tellez"]["vs_hand"]["ops"] == ".958"
+    # Albies is a switch hitter -> bats left vs Yamamoto -> mix uses his
+    # vs-LHH pitches: splitter first. Season share to lefties is 459/1521 =
+    # 30.2%; his last 5 starts (8/27-9/23) 77/271 = 28.4%, blended
+    # (77 + 100 x 30.2%) / (271 + 100) = 28.9%.
     alb = by["Ozzie Albies"]["mix"]["breakdown"]
-    assert alb[0]["type"] == "FS" and alb[0]["usage"] == 30, alb  # 459 of 1521 to lefties
-    # Splitter-heavy mix vs a hitter with a .181 xwOBA on splitters grades below his usual.
+    assert alb[0]["type"] == "FS" and alb[0]["usage"] == 29, alb
     assert by["Ozzie Albies"]["mix"]["diff_num"] < 0, by["Ozzie Albies"]["mix"]
     print("\nReal-data estimates test passed.")
 

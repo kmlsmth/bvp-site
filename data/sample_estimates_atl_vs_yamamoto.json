@@ -1,0 +1,673 @@
+{
+"_note": "Real data captured 2026-10-06 for Braves hitters vs Yoshinobu Yamamoto (MLB Stats API splits vs RHP, Yamamoto vs LHH/RHH, league totals, his last 5 starts' batters faced; Baseball Savant batter and pitcher arsenal rows (rows under 5 PA dropped), and Yamamoto's 2026 pitch counts by batter side). Trimmed to the fields the code reads.",
+"roster": {
+"roster": [
+{
+"person": {
+"id": 663586,
+"fullName": "Austin Riley"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 676551,
+"fullName": "Brewer Hicklen"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 686948,
+"fullName": "Drake Baldwin"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 673490,
+"fullName": "Ha-Seong Kim"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 657041,
+"fullName": "Lane Thomas"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 621566,
+"fullName": "Matt Olson"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 643289,
+"fullName": "Mauricio Dubón"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 671739,
+"fullName": "Michael Harris II"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 573262,
+"fullName": "Mike Yastrzemski"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 645277,
+"fullName": "Ozzie Albies"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 660670,
+"fullName": "Ronald Acuña Jr."
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 642133,
+"fullName": "Rowdy Tellez"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 669221,
+"fullName": "Sean Murphy"
+},
+"position": {
+"type": "Infielder"
+}
+},
+{
+"person": {
+"id": 519242,
+"fullName": "Chris Sale"
+},
+"position": {
+"type": "Pitcher"
+}
+}
+]
+},
+"people": {
+"people": [
+{
+"id": 663586,
+"fullName": "Austin Riley",
+"batSide": {
+"code": "R"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 446,
+"atBats": 405,
+"hits": 87,
+"baseOnBalls": 30,
+"hitByPitch": 7,
+"strikeOuts": 141,
+"homeRuns": 16,
+"totalBases": 151,
+"avg": ".215",
+"obp": ".278",
+"slg": ".373",
+"ops": ".651"
+}
+}
+]
+}
+]
+},
+{
+"id": 676551,
+"fullName": "Brewer Hicklen",
+"batSide": {
+"code": "R"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 38,
+"atBats": 31,
+"hits": 8,
+"baseOnBalls": 7,
+"hitByPitch": 0,
+"strikeOuts": 13,
+"homeRuns": 0,
+"totalBases": 11,
+"avg": ".258",
+"obp": ".395",
+"slg": ".355",
+"ops": ".750"
+}
+}
+]
+}
+]
+},
+{
+"id": 686948,
+"fullName": "Drake Baldwin",
+"batSide": {
+"code": "L"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 391,
+"atBats": 345,
+"hits": 106,
+"baseOnBalls": 38,
+"hitByPitch": 6,
+"strikeOuts": 83,
+"homeRuns": 18,
+"totalBases": 174,
+"avg": ".307",
+"obp": ".384",
+"slg": ".504",
+"ops": ".888"
+}
+}
+]
+}
+]
+},
+{
+"id": 673490,
+"fullName": "Ha-Seong Kim",
+"batSide": {
+"code": "R"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 81,
+"atBats": 67,
+"hits": 10,
+"baseOnBalls": 12,
+"hitByPitch": 1,
+"strikeOuts": 19,
+"homeRuns": 0,
+"totalBases": 11,
+"avg": ".149",
+"obp": ".288",
+"slg": ".164",
+"ops": ".452"
+}
+}
+]
+}
+]
+},
+{
+"id": 657041,
+"fullName": "Lane Thomas",
+"batSide": {
+"code": "R"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 209,
+"atBats": 185,
+"hits": 36,
+"baseOnBalls": 21,
+"hitByPitch": 2,
+"strikeOuts": 54,
+"homeRuns": 6,
+"totalBases": 63,
+"avg": ".195",
+"obp": ".282",
+"slg": ".341",
+"ops": ".623"
+}
+}
+]
+}
+]
+},
+{
+"id": 621566,
+"fullName": "Matt Olson",
+"batSide": {
+"code": "L"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 418,
+"atBats": 368,
+"hits": 90,
+"baseOnBalls": 44,
+"hitByPitch": 1,
+"strikeOuts": 100,
+"homeRuns": 25,
+"totalBases": 184,
+"avg": ".245",
+"obp": ".323",
+"slg": ".500",
+"ops": ".823"
+}
+}
+]
+}
+]
+},
+{
+"id": 643289,
+"fullName": "Mauricio Dubón",
+"batSide": {
+"code": "R"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 409,
+"atBats": 376,
+"hits": 108,
+"baseOnBalls": 25,
+"hitByPitch": 3,
+"strikeOuts": 53,
+"homeRuns": 8,
+"totalBases": 153,
+"avg": ".287",
+"obp": ".336",
+"slg": ".407",
+"ops": ".743"
+}
+}
+]
+}
+]
+},
+{
+"id": 671739,
+"fullName": "Michael Harris II",
+"batSide": {
+"code": "L"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 397,
+"atBats": 381,
+"hits": 114,
+"baseOnBalls": 13,
+"hitByPitch": 0,
+"strikeOuts": 78,
+"homeRuns": 18,
+"totalBases": 194,
+"avg": ".299",
+"obp": ".321",
+"slg": ".509",
+"ops": ".830"
+}
+}
+]
+}
+]
+},
+{
+"id": 573262,
+"fullName": "Mike Yastrzemski",
+"batSide": {
+"code": "L"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 368,
+"atBats": 326,
+"hits": 74,
+"baseOnBalls": 38,
+"hitByPitch": 2,
+"strikeOuts": 84,
+"homeRuns": 11,
+"totalBases": 126,
+"avg": ".227",
+"obp": ".310",
+"slg": ".387",
+"ops": ".697"
+}
+}
+]
+}
+]
+},
+{
+"id": 645277,
+"fullName": "Ozzie Albies",
+"batSide": {
+"code": "S"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 422,
+"atBats": 372,
+"hits": 80,
+"baseOnBalls": 36,
+"hitByPitch": 6,
+"strikeOuts": 80,
+"homeRuns": 14,
+"totalBases": 137,
+"avg": ".215",
+"obp": ".289",
+"slg": ".368",
+"ops": ".657"
+}
+}
+]
+}
+]
+},
+{
+"id": 660670,
+"fullName": "Ronald Acuña Jr.",
+"batSide": {
+"code": "R"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 324,
+"atBats": 284,
+"hits": 76,
+"baseOnBalls": 33,
+"hitByPitch": 4,
+"strikeOuts": 68,
+"homeRuns": 15,
+"totalBases": 133,
+"avg": ".268",
+"obp": ".349",
+"slg": ".468",
+"ops": ".817"
+}
+}
+]
+}
+]
+},
+{
+"id": 642133,
+"fullName": "Rowdy Tellez",
+"batSide": {
+"code": "L"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 9,
+"atBats": 8,
+"hits": 2,
+"baseOnBalls": 1,
+"hitByPitch": 0,
+"strikeOuts": 3,
+"homeRuns": 1,
+"totalBases": 5,
+"avg": ".250",
+"obp": ".333",
+"slg": ".625",
+"ops": ".958"
+}
+}
+]
+}
+]
+},
+{
+"id": 669221,
+"fullName": "Sean Murphy",
+"batSide": {
+"code": "R"
+},
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"plateAppearances": 87,
+"atBats": 79,
+"hits": 17,
+"baseOnBalls": 8,
+"hitByPitch": 0,
+"strikeOuts": 25,
+"homeRuns": 2,
+"totalBases": 27,
+"avg": ".215",
+"obp": ".287",
+"slg": ".342",
+"ops": ".629"
+}
+}
+]
+}
+]
+}
+]
+},
+"pitcher_vs": {
+"stats": [
+{
+"splits": [
+{
+"split": {
+"code": "vl"
+},
+"stat": {
+"battersFaced": 378,
+"atBats": 350,
+"hits": 59,
+"baseOnBalls": 23,
+"hitByPitch": 4,
+"strikeOuts": 96,
+"homeRuns": 10,
+"totalBases": 99
+}
+},
+{
+"split": {
+"code": "vr"
+},
+"stat": {
+"battersFaced": 330,
+"atBats": 305,
+"hits": 60,
+"baseOnBalls": 19,
+"hitByPitch": 3,
+"strikeOuts": 86,
+"homeRuns": 10,
+"totalBases": 103
+}
+}
+]
+}
+]
+},
+"league": {
+"plateAppearances": 183849,
+"atBats": 163329,
+"hits": 39849,
+"baseOnBalls": 16337,
+"hitByPitch": 2118,
+"strikeOuts": 40700,
+"homeRuns": 5575,
+"totalBases": 65409,
+"gamesPlayed": 4858
+},
+"gamelog": {
+"stats": [
+{
+"type": {
+"displayName": "gameLog"
+},
+"splits": [
+{
+"date": "2026-08-27",
+"gameType": "R",
+"stat": {
+"gamesStarted": 1,
+"battersFaced": 24
+}
+},
+{
+"date": "2026-09-02",
+"gameType": "R",
+"stat": {
+"gamesStarted": 1,
+"battersFaced": 27
+}
+},
+{
+"date": "2026-09-09",
+"gameType": "R",
+"stat": {
+"gamesStarted": 1,
+"battersFaced": 24
+}
+},
+{
+"date": "2026-09-15",
+"gameType": "R",
+"stat": {
+"gamesStarted": 1,
+"battersFaced": 24
+}
+},
+{
+"date": "2026-09-23",
+"gameType": "R",
+"stat": {
+"gamesStarted": 1,
+"battersFaced": 26
+}
+}
+]
+}
+]
+},
+"batter_csv": "player_id,pitch_type,pitches,pitch_usage,pa,est_ba,est_slg,est_woba,whiff_percent\n621566,FF,885,30.4,213,0.253,0.524,0.365,25.2\n663586,FF,806,31.7,209,0.209,0.401,0.313,33.2\n645277,FF,733,28.8,190,0.211,0.393,0.298,20.3\n643289,FF,750,33.1,181,0.242,0.324,0.285,14\n660670,FF,655,35.1,161,0.219,0.418,0.328,31.1\n686948,FF,681,28.6,150,0.335,0.603,0.422,20.2\n573262,FF,655,37.8,143,0.246,0.384,0.316,23.3\n671739,FF,572,26,125,0.296,0.538,0.385,20.8\n645277,CH,399,15.7,122,0.215,0.321,0.236,18.2\n671739,SI,422,19.2,122,0.341,0.403,0.349,13.7\n686948,SI,431,18.1,119,0.334,0.601,0.446,12.1\n643289,SI,414,18.3,119,0.321,0.417,0.343,12.6\n621566,SI,427,14.7,118,0.274,0.534,0.388,17.8\n663586,SI,395,15.6,116,0.232,0.387,0.306,13.9\n657041,FF,411,26.8,114,0.218,0.376,0.327,19.1\n660670,SI,305,16.4,99,0.351,0.699,0.469,16.8\n645277,SI,334,13.1,96,0.254,0.39,0.29,14.4\n657041,SI,295,19.3,93,0.278,0.43,0.358,8.2\n671739,SL,261,11.9,91,0.299,0.477,0.336,28.2\n686948,SL,308,12.9,84,0.174,0.342,0.258,36.8\n621566,SL,365,12.5,82,0.232,0.546,0.339,36.3\n645277,CU,297,11.7,77,0.19,0.229,0.229,18.8\n671739,CH,242,11,77,0.271,0.43,0.312,31\n686948,CH,252,10.6,76,0.251,0.402,0.334,26.6\n643289,CH,209,9.2,74,0.214,0.303,0.255,11\n663586,SL,295,11.6,72,0.22,0.393,0.272,36.6\n671739,ST,206,9.4,70,0.262,0.472,0.323,27.6\n663586,ST,317,12.5,70,0.207,0.373,0.286,37.2\n643289,ST,266,11.7,69,0.271,0.409,0.287,18.4\n621566,ST,276,9.5,67,0.225,0.415,0.304,29\n643289,SL,252,11.1,67,0.277,0.405,0.324,26.2\n621566,CH,312,10.7,65,0.254,0.502,0.356,22.8\n621566,FC,303,10.4,63,0.265,0.577,0.397,22.2\n663586,CH,243,9.6,58,0.191,0.278,0.235,37.4\n645277,SL,226,8.9,58,0.259,0.383,0.313,25.4\n621566,CU,223,7.7,57,0.181,0.292,0.221,26.6\n643289,FC,175,7.7,56,0.309,0.422,0.356,10.9\n573262,SI,237,13.7,55,0.231,0.409,0.35,14.3\n671739,CU,189,8.6,53,0.159,0.293,0.201,37.4\n686948,CU,184,7.7,53,0.215,0.496,0.327,36.3\n673490,FF,244,38.3,53,0.129,0.185,0.222,25.2\n686948,FC,217,9.1,52,0.269,0.455,0.346,26\n645277,FC,220,8.7,47,0.205,0.279,0.324,26\n573262,SL,179,10.3,47,0.185,0.316,0.243,33.8\n686948,ST,189,7.9,46,0.282,0.523,0.387,26.5\n573262,CH,169,9.7,46,0.267,0.397,0.322,20\n657041,SL,227,14.8,44,0.236,0.28,0.285,39.7\n645277,ST,180,7.1,44,0.217,0.277,0.26,29.2\n660670,SL,201,10.8,44,0.211,0.313,0.325,30.2\n669221,FF,147,32.6,43,0.251,0.392,0.305,16.4\n671739,FC,173,7.9,42,0.325,0.515,0.367,19.8\n660670,CH,164,8.8,42,0.239,0.452,0.304,35.5\n663586,FC,217,8.5,42,0.256,0.567,0.37,36\n660670,FC,200,10.7,42,0.239,0.309,0.335,32\n645277,FS,136,5.4,41,0.192,0.224,0.181,32.9\n660670,ST,165,8.8,38,0.248,0.578,0.392,36.4\n663586,CU,167,6.6,37,0.196,0.395,0.285,38.6\n573262,FC,153,8.8,36,0.24,0.364,0.346,28.8\n673490,SI,146,22.9,34,0.194,0.246,0.237,4.8\n657041,CH,123,8,33,0.323,0.424,0.37,35.2\n573262,CU,137,7.9,32,0.293,0.513,0.397,22.4\n657041,FC,164,10.7,31,0.294,0.444,0.316,32.1\n643289,CU,129,5.7,29,0.262,0.454,0.333,17.9\n573262,ST,127,7.3,29,0.126,0.154,0.162,22.4\n657041,ST,162,10.6,28,0.163,0.209,0.197,26.3\n686948,FS,96,4,28,0.311,0.51,0.363,26.2\n669221,SI,86,19.1,24,0.191,0.257,0.3,17.8\n671739,FS,83,3.8,24,0.323,0.657,0.413,32.1\n657041,CU,94,6.1,19,0.17,0.364,0.248,14.7\n660670,FS,58,3.1,18,0.324,0.655,0.415,31.3\n643289,FS,50,2.2,18,0.252,0.397,0.279,18.2\n660670,CU,99,5.3,17,0.283,0.647,0.39,21.9\n621566,FS,84,2.9,17,0.262,0.387,0.289,36.6\n663586,FS,70,2.8,16,0.16,0.398,0.262,39.5\n573262,FS,56,3.2,15,0.218,0.252,0.206,25\n673490,FC,55,8.6,14,0.099,0.111,0.186,26.1\n673490,ST,54,8.5,13,0.065,0.071,0.169,18.2\n676551,SI,53,30.5,13,0.304,0.354,0.35,36.7\n669221,SL,60,13.3,12,0.145,0.208,0.152,51.9\n673490,SL,63,9.9,12,0.256,0.382,0.308,26.1\n676551,FF,44,25.3,11,0.115,0.268,0.26,40.9\n669221,FC,40,8.9,10,0.283,0.531,0.346,17.4\n669221,CH,34,7.5,9,0.102,0.107,0.227,66.7\n669221,CU,27,6,8,0.15,0.274,0.179,64.3\n669221,ST,39,8.6,8,0.142,0.18,0.21,56.3\n657041,FS,32,2.1,8,0.033,0.04,0.114,23.5\n673490,CH,40,6.3,8,0.249,0.286,0.231,18.2\n663586,SV,24,0.9,7,0.074,0.082,0.189,25\n671739,SV,26,1.2,7,0.305,0.751,0.442,33.3\n673490,CU,24,3.8,7,0.19,0.222,0.179,33.3\n621566,SV,24,0.8,6,0.3,0.895,0.564,8.3\n669221,FS,14,3.1,5,0.024,0.027,0.022,54.5\n673490,FS,10,1.6,5,0.108,0.116,0.218,44.4\n676551,FC,12,6.9,5,0.004,0.01,0.144,50\n676551,SL,17,9.8,5,0.249,0.344,0.255,55.6\n660670,SV,15,0.8,5,0.329,0.364,0.296,57.1\n",
+"pitcher_csv": "player_id,pitch_type,pitches,pitch_usage,pa,est_ba,est_slg,est_woba,whiff_percent\n808967,FS,728,26.6,210,0.187,0.253,0.208,33.8\n808967,FF,716,26.2,155,0.217,0.465,0.331,29.1\n808967,SI,358,13.1,110,0.203,0.305,0.256,13.9\n808967,FC,406,14.9,102,0.226,0.364,0.303,23.6\n808967,CU,360,13.2,73,0.252,0.363,0.289,26\n808967,SL,166,6.1,56,0.226,0.29,0.229,35.7\n",
+"usage_counts": {
+"L": {
+"CU": 234,
+"FS": 459,
+"FC": 263,
+"SI": 98,
+"FF": 452,
+"SL": 15
+},
+"R": {
+"SI": 260,
+"CU": 126,
+"FF": 264,
+"FS": 269,
+"FC": 143,
+"SL": 151
+}
+}
+}

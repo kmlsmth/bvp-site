@@ -253,7 +253,9 @@ def test_live_mlb_endpoints(client) -> None:
     assert calls["vs"] == 2, calls
     print(f"/api/lineup?fetch=1 OK: {lu['rows'][0]['name']} 2-for-6 vs reliever, cached on re-view")
 
-    # --- /api/estimates: every hitter's line vs the pitcher's hand + estimate
+    # --- /api/estimates: estimated AVG/OBP/SLG/OPS + HR tonight, with the
+    # Statcast pitch-mix layer (Savant downloads stubbed too).
+    import savant_api
     seen = {}
 
     def fake_hitters(ids, season, sit_code):
@@ -261,44 +263,81 @@ def test_live_mlb_endpoints(client) -> None:
         return {"people": [
             {"id": 139001, "fullName": "Away Hitter One", "batSide": {"code": "S"},
              "stats": [{"splits": [{"split": {"code": sit_code}, "stat": {
-                 "plateAppearances": 300, "hits": 80, "baseOnBalls": 30, "hitByPitch": 2,
-                 "strikeOuts": 50, "homeRuns": 15, "avg": ".296", "obp": ".373",
-                 "slg": ".530", "ops": ".903"}}]}]},
+                 "plateAppearances": 300, "atBats": 265, "hits": 80, "baseOnBalls": 30,
+                 "hitByPitch": 2, "strikeOuts": 50, "homeRuns": 15, "totalBases": 140,
+                 "avg": ".302", "obp": ".373", "slg": ".528", "ops": ".901"}}]}]},
             {"id": 139002, "fullName": "Away Hitter Two", "batSide": {"code": "R"}},  # no split vs this hand
         ]}
 
     def fake_pitcher_vs(pid, season):
         return {"stats": [{"splits": [
-            {"split": {"code": "vl"}, "stat": {"battersFaced": 200, "hits": 40, "baseOnBalls": 15,
-                                               "hitByPitch": 1, "strikeOuts": 60, "homeRuns": 5}},
-            {"split": {"code": "vr"}, "stat": {"battersFaced": 400, "hits": 70, "baseOnBalls": 20,
-                                               "hitByPitch": 2, "strikeOuts": 110, "homeRuns": 8}},
+            {"split": {"code": "vl"}, "stat": {"battersFaced": 200, "atBats": 180, "hits": 40, "baseOnBalls": 15,
+                                               "hitByPitch": 1, "strikeOuts": 60, "homeRuns": 5, "totalBases": 65}},
+            {"split": {"code": "vr"}, "stat": {"battersFaced": 400, "atBats": 365, "hits": 70, "baseOnBalls": 20,
+                                               "hitByPitch": 2, "strikeOuts": 110, "homeRuns": 8, "totalBases": 110}},
         ]}]}
 
     def fake_league(season):
-        return {"stats": [{"splits": [{"stat": {"plateAppearances": 6000, "hits": 1300, "baseOnBalls": 530,
-                                                "hitByPitch": 70, "strikeOuts": 1330, "homeRuns": 180}}] * 30}]}
+        return {"stats": [{"splits": [{"stat": {
+            "plateAppearances": 6000, "atBats": 5300, "hits": 1300, "baseOnBalls": 530,
+            "hitByPitch": 70, "strikeOuts": 1330, "homeRuns": 180, "totalBases": 2120,
+            "gamesPlayed": 160}}] * 30}]}
 
+    header = ('"last_name, first_name","player_id","team_name_alt","pitch_type","pitch_name",'
+              '"pitches","pitch_usage","pa","est_ba","est_slg","est_woba","whiff_percent"\n')
+    batter_csv = header + (
+        '"One, Away",139001,"TB","FF","4-Seam Fastball","400",40,"100","0.300","0.600","0.420",18\n'
+        '"One, Away",139001,"TB","SL","Slider","300",30,"80","0.200","0.330","0.270",35\n')
+    pitcher_csv = header + (
+        '"Arm, Relief",555666,"NYY","SL","Slider","300",60,"70","0.190","0.300","0.250",38\n'
+        '"Arm, Relief",555666,"NYY","FF","4-Seam Fastball","200",40,"50","0.250","0.420","0.330",22\n')
+    # Pitch log: to right-handed hitters (switch hitter One bats R vs this
+    # lefty) he throws 80% sliders -- the hitter's weak pitch.
+    log = '"pitch_type","stand","des"\n' + '"SL","R","a, b"\n' * 8 + '"FF","R","x"\n' * 2 + '"FF","L","y"\n' * 5
+    savant_api.get_arsenal_leaderboard = lambda kind, season: batter_csv if kind == "batter" else pitcher_csv
+    savant_api.get_pitcher_pitches = lambda pid, season: log
     mlb_api.get_hitters_vs_hand = fake_hitters
     mlb_api.get_pitcher_vs_hand = fake_pitcher_vs
     mlb_api.get_league_team_hitting = fake_league
 
-    resp = client.get("/api/estimates?pitcher=555666&opponent_team=139&date=2026-10-05")
+    resp = client.get("/api/estimates?pitcher=555666&opponent_team=139&date=2026-10-05&role=reliever")
     assert resp.status_code == 200, resp.status_code
     est = resp.get_json()
     assert est["pitcher"]["throws"] == "L" and seen["sit_code"] == "vl", (est["pitcher"], seen)
-    assert est["league"]["obp"] == ".317", est["league"]  # 1900/6000
+    assert est["league"]["obp"] == ".317" and est["mix_available"], est["league"]  # 1900/6000
     by_name = {r["name"]: r for r in est["rows"]}
     assert set(by_name) == {"Away Hitter One", "Away Hitter Two"}, by_name  # roster pitcher excluded
     one, two = by_name["Away Hitter One"], by_name["Away Hitter Two"]
-    assert one["vs_hand"]["pa"] == 300 and one["vs_hand"]["ops"] == ".903", one
-    assert one["pitcher_bf_vs_side"] == 400, one  # switch hitter bats RIGHT vs a lefty
-    assert two["vs_hand"]["pa"] == 0 and two["vs_hand"]["ops"] is None, two
-    assert two["pitcher_bf_vs_side"] == 400, two
-    assert one["est"]["obp_num"] > two["est"]["obp_num"], (one["est"], two["est"])
-    assert est["rows"][0]["name"] == "Away Hitter One"  # sorted best estimate first
-    print(f"/api/estimates OK: {[(r['name'], r['est']['obp'], r['est']['k_pct'], r['est']['hr_pct']) for r in est['rows']]}")
+    assert one["vs_hand"]["pa"] == 300 and one["vs_hand"]["ops"] == ".901", one
+    assert two["vs_hand"]["pa"] == 0 and two["vs_hand"]["ops"] is None and two["mix"] is None, two
+    # Pitch mix: 80% sliders to his side, where his xwOBA is .270 vs .420 on
+    # fastballs -> the mix grades below his usual and the breakdown says so.
+    m = one["mix"]
+    assert m["diff_num"] < 0, m
+    assert [b["type"] for b in m["breakdown"]] == ["SL", "FF"] and m["breakdown"][0]["usage"] == 80, m
+    assert m["breakdown"][0]["hitter_xwoba"] == ".270" and m["breakdown"][0]["pitcher_xwoba"] == ".250", m
+    for k in ("avg", "obp", "slg", "ops", "hr_tonight"):
+        assert one["est"][k] and two["est"][k], (k, one["est"], two["est"])
+    assert est["rows"][0]["est"]["ops_num"] >= est["rows"][1]["est"]["ops_num"]  # best estimate first
+    # Reliever: no relief outings in the stub log -> 4.5 BF default, a small share of the game.
+    assert est["pitcher"]["avg_bf"] == 4.5 and est["pitcher"]["share_of_game"] < 0.2, est["pitcher"]
+    print(f"/api/estimates OK: {[(r['name'], r['est']['avg'], r['est']['obp'], r['est']['slg'], r['est']['ops'], r['est']['hr_tonight']) for r in est['rows']]}")
 
+    # Statcast down -> estimates still served, just without the mix layer.
+    def boom(*a, **k):
+        raise RuntimeError("savant down")
+    savant_api.get_arsenal_leaderboard = boom
+    savant_api.get_pitcher_pitches = boom
+    import api.app as app_module
+    app_module._cache.clear()
+    resp = client.get("/api/estimates?pitcher=555666&opponent_team=139&date=2026-10-05")
+    est2 = resp.get_json()
+    assert resp.status_code == 200 and est2["mix_available"] is False, est2
+    assert all(r["mix"] is None for r in est2["rows"]), est2["rows"]
+    one2 = {r["name"]: r for r in est2["rows"]}["Away Hitter One"]
+    # Without the slider-heavy mix nudge, the same hitter estimates higher.
+    assert one2["est"]["ops_num"] > one["est"]["ops_num"], (one2["est"], one["est"])
+    print("/api/estimates without Statcast OK (falls back to handedness-only estimate)")
 
 if __name__ == "__main__":
     main()

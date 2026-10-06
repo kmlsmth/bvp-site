@@ -283,6 +283,19 @@
   .no-h2h { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--stitch); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 5px; white-space: nowrap; }
   .bench-row td { color: var(--muted); }
   .est-note { font-size: 11.5px; color: var(--muted); margin: 6px 2px 0; }
+  table.lineup tbody tr.mix-row td { background: var(--surface-2) !important; padding: 10px 12px; white-space: normal !important; text-align: left !important; position: static !important; }
+  /* Sized to the visible box (not the wide table) and pinned to its left
+     edge, so the breakdown is readable on a phone without scrolling. */
+  .mix-detail { font-family: var(--font-body); font-size: 12.5px; color: var(--ink); max-width: min(520px, calc(100vw - 72px)); position: sticky; left: 12px; }
+  .mix-sum { margin-bottom: 8px; }
+  table.mix-table { border-collapse: collapse; font-size: 12px; min-width: 0; width: auto; }
+  table.mix-table th { font-size: 10px; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 3px 10px 3px 0; text-align: right; background: none; border: none; position: static; }
+  table.mix-table th:first-child, table.mix-table td:first-child { text-align: left; font-family: var(--font-body); }
+  table.mix-table td { padding: 3px 10px 3px 0; text-align: right; font-family: var(--font-mono); background: none !important; border: none; position: static; white-space: nowrap; }
+  .mix-pa { color: var(--muted); font-size: 10.5px; }
+  .mix-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .sp-arsenal { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+  .sp-arsenal strong { color: var(--ink); font-weight: 600; }
 
   .no-history-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 2px 2px; }
 
@@ -388,8 +401,9 @@
       .then(function (r) { if (!r.ok) throw new Error("pitcher request failed"); return r.json(); });
   }
 
-  function fetchEstimates(pitcherId, opponentTeamId, date) {
-    return fetch("/api/estimates?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId + "&date=" + encodeURIComponent(date))
+  function fetchEstimates(pitcherId, opponentTeamId, date, gamePk, isReliever) {
+    return fetch("/api/estimates?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId +
+        "&date=" + encodeURIComponent(date) + "&game=" + gamePk + (isReliever ? "&role=reliever" : ""))
       .then(function (r) { if (!r.ok) throw new Error("estimates request failed"); return r.json(); });
   }
 
@@ -739,6 +753,20 @@
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
 
+  // Pitch mix vs each side (Statcast, regular season) -- the same numbers
+  // that feed the pitch-mix part of the hitter estimates below.
+  function arsenalHtml(a) {
+    if (!a) return "";
+    function line(side, label) {
+      var list = a[side] || [];
+      if (!list.length) return "";
+      return '<div><strong>' + label + ':</strong> ' + list.map(function (x) {
+        return escapeHtml(x.name) + ' ' + x.pct + '%';
+      }).join(" &middot; ") + '</div>';
+    }
+    return '<div class="sp-arsenal">' + line("L", "vs LHH") + line("R", "vs RHH") + '</div>';
+  }
+
   function starterCardHtml(p, sp) {
     function v(line, key) { return line && line[key] ? line[key] : "–"; }
     var hand = p.throws === "L" ? "LHP" : p.throws === "R" ? "RHP" : "";
@@ -768,7 +796,8 @@
           v(last, "whip") + '</td><td>' + v(last, "k9") + '</td><td>' +
           (last ? last.ip_per_start + '<span style="color:var(--muted)">/start</span>' : "–") + '</td></tr>' +
       '</tbody></table>' +
-      (foot.length ? '<div class="sp-foot">' + foot.join(" &middot; ") + '</div>' : "");
+      (foot.length ? '<div class="sp-foot">' + foot.join(" &middot; ") + '</div>' : "") +
+      arsenalHtml(p.arsenal);
   }
 
   function fatigueSummaryText(fatigue) {
@@ -962,7 +991,7 @@
         var estHost = el('<div><div class="loading">Loading this lineup’s season splits&hellip;</div></div>');
         tableHost.appendChild(estHost);
         var oppLineup = entry.oppId === game.home_team_id ? game.home_lineup : game.away_lineup;
-        fetchEstimates(entry.id, entry.oppId, game.game_date).then(function (est) {
+        fetchEstimates(entry.id, entry.oppId, game.game_date, game.game_pk, !entry.isStarter).then(function (est) {
           if (seq !== requestSeq) return;
           estHost.innerHTML = "";
           estHost.appendChild(buildEstimatesBlock(est, data, entry, oppLineup));
@@ -1032,17 +1061,40 @@
     return wrap;
   }
 
-  // ---- Every hitter: season line vs this pitcher's hand + matchup estimate ----
-  function estTip(hand, pitcherName, league) {
+  // ---- Every hitter: estimate vs this pitcher + real season line vs his hand ----
+  function estTip(hand, pitcherName, est) {
     var handWord = hand === "L" ? "left-handed" : "right-handed";
-    return "Est. columns: a rough estimate of one plate appearance against " +
-      pitcherName + " -- it blends the hitter's line vs " + handWord + " pitching with how " +
-      pitcherName + " has done this season against hitters from that hitter's side, relative " +
-      "to league average (" + league.obp + " OBP, " + league.k_pct + " K, " + league.hr_pct +
-      " HR per plate appearance), using the odds-ratio method from \"The Book\" (Tango et al.). " +
-      "Small samples are pulled toward league average, so a 2-for-3 doesn't look like a .667 " +
-      "hitter. A guide, not a prediction. The columns after it are each hitter's real 2026 " +
-      "regular-season line against " + handWord + " pitchers.";
+    var lg = est.league;
+    return "Est. columns: a rough estimate of how each hitter does against " + pitcherName +
+      ". Step 1: his 2026 line against " + handWord + " pitching, combined with how " +
+      pitcherName + " has done against hitters from that side, relative to league average (" +
+      lg.avg + " / " + lg.obp + " / " + lg.slg + "), using the odds-ratio method from \"The Book\" " +
+      "(Tango et al.). Small samples are pulled toward league average. " +
+      (est.mix_available ? "Step 2: nudged by pitch mix -- how the hitter handles each pitch type " +
+        "(Statcast expected stats), weighted by how often " + pitcherName + " throws each one to " +
+        "hitters from that side. Tap a hitter to see the pitch-by-pitch breakdown. " : "") +
+      "HR = chance of at least one home run tonight: his usual plate appearances for his " +
+      "lineup spot, about " + Math.round(est.pitcher.share_of_game * 100) + "% of them against " +
+      pitcherName + " (how deep he's been going) and the rest against the bullpen. " +
+      "A guide, not a prediction. The columns after it are his real 2026 regular-season " +
+      "line against " + handWord + " pitchers.";
+  }
+
+  function mixBreakdownHtml(r, pitcherName) {
+    var m = r.mix;
+    if (!m || !m.breakdown.length) return '<div class="mix-detail">No Statcast pitch-type data for this hitter yet.</div>';
+    var diff = m.diff_num;
+    var verdict = Math.abs(diff) < 0.010 ? "about the same as" : diff > 0 ? "better than" : "worse than";
+    var rows = m.breakdown.map(function (b) {
+      return '<tr><td>' + escapeHtml(b.name) + '</td><td>' + b.usage + '%</td><td>' + (b.pitcher_xwoba || "–") +
+        '</td><td>' + (b.hitter_xwoba || "–") + '<span class="mix-pa"> ' + (b.hitter_pa || 0) + ' PA</span></td></tr>';
+    }).join("");
+    return '<div class="mix-detail"><div class="mix-sum">Against ' + escapeHtml(pitcherName) + '’s mix, ' +
+      escapeHtml(r.name) + ' projects <strong>' + m.xwoba_vs_mix + ' xwOBA</strong> &mdash; ' + verdict +
+      ' his usual ' + m.xwoba_usual + '.</div>' +
+      '<table class="mix-table"><thead><tr><th>Pitch</th><th>Thrown</th><th>Pitcher xwOBA</th><th>Hitter xwOBA</th></tr></thead><tbody>' +
+      rows + '</tbody></table><div class="mix-note">Thrown = share of his pitches to hitters from this side. ' +
+      'xwOBA = expected wOBA from contact quality (league average is about .315); lower is better for the pitcher.</div></div>';
   }
 
   function buildEstimatesBlock(est, bvp, entry, lineup) {
@@ -1060,39 +1112,60 @@
       if (oa && ob) return oa - ob;
       if (oa) return -1;
       if (ob) return 1;
-      return b.est.obp_num - a.est.obp_num;
+      return b.est.ops_num - a.est.ops_num;
     });
 
-    var lg = parseFloat(est.league.obp);
-    // Estimate columns right after the name, so they're visible on a phone
-    // without scrolling the table sideways; the real season line follows.
+    var lgOps = est.league.ops_num;
     var head = '<thead><tr><th>Batter</th>' +
-      '<th class="est-col">Est. OBP</th><th class="est-col">Est. K%</th><th class="est-col">Est. HR%</th>' +
-      '<th class="first-real">PA</th><th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th><th>HR</th><th>K%</th></tr></thead>';
-    var body = rows.map(function (r) {
-      var v = r.vs_hand;
+      '<th class="est-col">Est. AVG</th><th class="est-col">Est. OBP</th><th class="est-col">Est. SLG</th>' +
+      '<th class="est-col">Est. OPS</th><th class="est-col">HR tonight</th>' +
+      '<th class="first-real">PA</th><th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th><th>HR</th></tr></thead>';
+    var ncols = 12;
+
+    var table = el('<table class="lineup est">' + head + '<tbody></tbody></table>');
+    var tbody = table.querySelector("tbody");
+    rows.forEach(function (r) {
+      var v = r.vs_hand, e = r.est;
       var order = orderById[r.id];
-      var cls = r.est.obp_num >= lg + 0.03 ? "hot" : r.est.obp_num <= lg - 0.03 ? "cold" : "";
-      return '<tr class="' + (hasLineup && !order ? "bench-row" : "") + '"><td>' +
+      var cls = e.ops_num >= lgOps + 0.06 ? "hot" : e.ops_num <= lgOps - 0.06 ? "cold" : "";
+      var tr = document.createElement("tr");
+      if (hasLineup && !order) tr.className = "bench-row";
+      tr.innerHTML = '<td>' +
           (order ? '<span class="order-num">' + order + '</span>' : "") + escapeHtml(r.name) +
           (r.bats ? '<span class="bat-side">' + r.bats + '</span>' : "") +
           (withHistory[r.id] ? "" : '<span class="no-h2h">no H2H</span>') + '</td>' +
-        '<td class="est-col ops-cell ' + cls + '">' + r.est.obp + '</td><td class="est-col">' + r.est.k_pct +
-          '</td><td class="est-col">' + r.est.hr_pct + '</td>' +
+        '<td class="est-col">' + e.avg + '</td><td class="est-col">' + e.obp + '</td><td class="est-col">' + e.slg +
+          '</td><td class="est-col ops-cell ' + cls + '">' + e.ops + '</td><td class="est-col">' + e.hr_tonight + '</td>' +
         '<td class="first-real">' + (v.pa || 0) + '</td><td>' + (v.avg || "–") + '</td><td>' + (v.obp || "–") + '</td><td>' +
-          (v.slg || "–") + '</td><td>' + (v.ops || "–") + '</td><td>' + (v.hr === null || v.hr === undefined ? "–" : v.hr) +
-          '</td><td>' + (v.k_pct || "–") + '</td></tr>';
-    }).join("");
+          (v.slg || "–") + '</td><td>' + (v.ops || "–") + '</td><td>' + (v.hr === null || v.hr === undefined ? "–" : v.hr) + '</td>';
+      if (est.mix_available) {
+        tr.style.cursor = "pointer";
+        tr.addEventListener("click", function () {
+          var next = tr.nextElementSibling;
+          if (next && next.classList.contains("mix-row")) { next.remove(); return; }
+          tbody.querySelectorAll("tr.mix-row").forEach(function (x) { x.remove(); });
+          var row = document.createElement("tr");
+          row.className = "mix-row";
+          var cell = document.createElement("td");
+          cell.colSpan = ncols;
+          cell.innerHTML = mixBreakdownHtml(r, entry.name);
+          row.appendChild(cell);
+          tr.parentNode.insertBefore(row, tr.nextSibling);
+        });
+      }
+      tbody.appendChild(tr);
+    });
 
     var wrap = el('<div></div>');
-    wrap.appendChild(el('<div class="est-head"><span>Every <strong>' + escapeHtml(entry.opp) + '</strong> hitter: 2026 vs ' +
-      handShort + ', and estimated vs <strong>' + escapeHtml(entry.name) + '</strong></span>' +
-      infoTip(estTip(hand, entry.name, est.league)) + '</div>'));
+    wrap.appendChild(el('<div class="est-head"><span>Every <strong>' + escapeHtml(entry.opp) + '</strong> hitter: estimated vs <strong>' +
+      escapeHtml(entry.name) + '</strong>, and 2026 vs ' + handShort + '</span>' +
+      infoTip(estTip(hand, entry.name, est)) + '</div>'));
     var scroll = el('<div class="table-scroll"></div>');
-    scroll.appendChild(el('<table class="lineup est">' + head + '<tbody>' + body + '</tbody></table>'));
+    scroll.appendChild(table);
     wrap.appendChild(scroll);
     wrap.appendChild(el('<div class="est-note">' +
-      (hasLineup ? "Today’s batting order first, then the bench. " : "Sorted by estimated OBP (lineup not posted yet). ") +
+      (hasLineup ? "Today’s batting order first, then the bench. " : "Sorted by estimated OPS (lineup not posted yet). ") +
+      (est.mix_available ? "Tap a hitter for his pitch-by-pitch matchup. " : "") +
       '<span class="no-h2h" style="margin-left:0">no H2H</span> = has never faced him.</div>'));
     return wrap;
   }

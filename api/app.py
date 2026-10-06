@@ -50,6 +50,8 @@ import init_db as init_db_module  # noqa: E402
 import matchup_estimate  # noqa: E402
 import mlb_api  # noqa: E402
 import parsing  # noqa: E402
+import pitch_mix  # noqa: E402
+import savant_api  # noqa: E402
 import stats as stats_module  # noqa: E402
 
 BULLPEN_WINDOW_DAYS = 7  # trailing window for fatigue + recent appearances
@@ -192,6 +194,73 @@ def _season_from(request_date: str | None) -> int:
     except ValueError:
         return date.today().year
 
+
+SAVANT_CACHE_SECONDS = 12 * 60 * 60  # Statcast leaderboards update overnight
+
+
+def _pitcher_gamelog(pitcher_id: int, season: int) -> list[dict]:
+    """Regular season + postseason game-by-game lines (cached)."""
+    return _cached(("gamelog", pitcher_id, season), STATS_CACHE_SECONDS,
+                   lambda: parsing.parse_pitching_gamelog(
+                       mlb_api.get_pitching_stats(pitcher_id, season, "gameLog",
+                                                  mlb_api.REGULAR_AND_POSTSEASON)))
+
+
+def _savant_board(kind: str, season: int) -> dict:
+    """Savant pitch-arsenal leaderboard, every batter or every pitcher."""
+    return _cached(("savant-board", kind, season), SAVANT_CACHE_SECONDS,
+                   lambda: pitch_mix.parse_arsenal_csv(savant_api.get_arsenal_leaderboard(kind, season)))
+
+
+def _pitcher_usage(pitcher_id: int, season: int) -> dict:
+    """{"L": {type: count}, "R": {...}} -- his pitch mix by batter side."""
+    return _cached(("savant-usage", pitcher_id, season), SAVANT_CACHE_SECONDS,
+                   lambda: pitch_mix.usage_by_stand(savant_api.get_pitcher_pitches(pitcher_id, season)))
+
+
+def _arsenal_summary(pitcher_id: int, season: int) -> dict | None:
+    """For the starter card: his mix vs lefties and vs righties (most-used
+    first), or None if Statcast data isn't available."""
+    try:
+        usage = _pitcher_usage(pitcher_id, season)
+    except Exception as exc:
+        print(f"[arsenal] {pitcher_id}: {exc}")
+        return None
+    out = {}
+    for side in ("L", "R"):
+        sh = pitch_mix.shares(usage.get(side) or {})
+        out[side] = [{"type": pt, "name": pitch_mix.PITCH_NAMES[pt], "pct": round(v * 100)}
+                     for pt, v in sorted(sh.items(), key=lambda kv: -kv[1]) if v >= 0.015]
+        out[side + "_pitches"] = sum((usage.get(side) or {}).values())
+    return out if (out["L_pitches"] or out["R_pitches"]) else None
+
+
+
+def _warm_statcast_loop() -> None:
+    """Background: keep today's starters' Statcast downloads cached, so the
+    first visitor to a game page doesn't wait on Baseball Savant (the
+    pitch-by-pitch file is ~2 MB and takes a few seconds). Every 30 min;
+    already-cached entries cost nothing."""
+    import ingest_daily
+    while True:
+        try:
+            today = ingest_daily.baseball_today()
+            season = int(today[:4])
+            _savant_board("batter", season)
+            _savant_board("pitcher", season)
+            for g in query_db("SELECT home_probable_pitcher_id AS h, away_probable_pitcher_id AS a "
+                              "FROM games WHERE game_date = ?", (today,)):
+                for pid in (g["h"], g["a"]):
+                    if pid:
+                        _pitcher_usage(pid, season)
+                        _pitcher_gamelog(pid, season)
+        except Exception as exc:
+            print(f"[statcast warm] {exc}")
+        time.sleep(30 * 60)
+
+
+if not os.environ.get("SKIP_SCHEDULER"):
+    threading.Thread(target=_warm_statcast_loop, name="statcast-warm", daemon=True).start()
 
 @app.get("/api/games")
 def games():
@@ -477,15 +546,16 @@ def pitcher_overview_route():
         totals = parsing.parse_pitching_totals(
             mlb_api.get_pitching_stats(pitcher_id, season, "season,career",
                                        mlb_api.REGULAR_SEASON))
-        gamelog = parsing.parse_pitching_gamelog(
-            mlb_api.get_pitching_stats(pitcher_id, season, "gameLog",
-                                       mlb_api.REGULAR_AND_POSTSEASON))
+        gamelog = _pitcher_gamelog(pitcher_id, season)
         return {
             "id": pitcher_id,
             "name": person["full_name"],
             "throws": person["throws"],
             "season_year": season,
             **bullpen_module.pitcher_overview(totals, gamelog, n=5, before_date=game_date),
+            # Statcast pitch mix vs each side; None (card just omits it) if
+            # Baseball Savant can't be reached.
+            "arsenal": _arsenal_summary(pitcher_id, season),
         }
 
     try:
@@ -596,17 +666,30 @@ def _fmt_pct(x: float | None, digits: int = 1) -> str | None:
 
 @app.get("/api/estimates")
 def estimates_route():
-    """Every position player on the opposing roster: his 2026 regular-season
-    line against this pitcher's throwing hand, plus an estimated on-base /
-    strikeout / home-run rate against THIS pitcher (see
-    scripts/matchup_estimate.py for the method). Covers every hitter --
-    including the many with no head-to-head history at all. Four MLB calls
-    for a whole lineup, each cached."""
+    """Every position player on the opposing roster, estimated against THIS
+    pitcher: AVG / OBP / SLG / OPS, and his chance of at least one home run
+    tonight -- next to his real 2026 regular-season line vs this pitcher's
+    hand. Covers every hitter, including the many with no head-to-head
+    history at all.
+
+    Three layers (see matchup_estimate.py and pitch_mix.py):
+      1. hitter vs this hand x pitcher vs this hitter's side, relative to
+         league (odds ratio), small samples regressed toward league;
+      2. nudged by pitch mix: how this hitter handles each pitch type
+         (Statcast expected stats), weighted by how often this pitcher
+         throws each one to hitters from that side;
+      3. HR tonight: his expected plate appearances (by lineup spot), split
+         between this pitcher (by how deep he usually goes) and the bullpen.
+    Query: pitcher, opponent_team, date, optional game (game_pk, for the
+    posted lineup) and role=reliever (shorter outings)."""
     pitcher_id = request.args.get("pitcher", type=int)
     opponent_team_id = request.args.get("opponent_team", type=int)
     if not pitcher_id or not opponent_team_id:
         return jsonify({"error": "pitcher and opponent_team query params (ids) are required"}), 400
-    season = _season_from(request.args.get("date"))
+    game_date = request.args.get("date")
+    game_pk = request.args.get("game", type=int)
+    is_reliever = request.args.get("role") == "reliever"
+    season = _season_from(game_date)
 
     try:
         throws = _person(pitcher_id).get("throws")
@@ -626,9 +709,41 @@ def estimates_route():
         league = _cached(("league", season), LEAGUE_CACHE_SECONDS,
                          lambda: matchup_estimate.league_rates(
                              parsing.parse_team_hitting_lines(mlb_api.get_league_team_hitting(season))))
+        gamelog = _pitcher_gamelog(pitcher_id, season)
     except Exception as exc:
         print(f"[estimates] pitcher={pitcher_id} team={opponent_team_id}: {exc}")
         return jsonify({"error": "Couldn't load season splits from MLB right now."}), 502
+
+    # Pitch-type layer: optional -- if Baseball Savant can't be reached the
+    # estimates still work, just without the pitch-mix nudge.
+    try:
+        batter_board = _savant_board("batter", season)
+        pitcher_board = _savant_board("pitcher", season).get(pitcher_id) or {}
+        usage = _pitcher_usage(pitcher_id, season)
+        mix_available = bool(usage.get("L") or usage.get("R"))
+    except Exception as exc:
+        print(f"[estimates] Statcast unavailable for pitcher={pitcher_id}: {exc}")
+        batter_board, pitcher_board, usage, mix_available = {}, {}, {}, False
+
+    # How much of the game he'll pitch: average batters faced over recent
+    # outings (last 5 starts, or last 10 relief appearances) before today,
+    # as a share of a team's plate appearances in a game.
+    outings = sorted((g for g in gamelog
+                      if g.get("game_date") and (not game_date or g["game_date"] < game_date)
+                      and bool(g.get("started")) != is_reliever),
+                     key=lambda g: g["game_date"], reverse=True)[:10 if is_reliever else 5]
+    bf = [g["batters_faced"] for g in outings if g.get("batters_faced")]
+    avg_bf = sum(bf) / len(bf) if bf else (4.5 if is_reliever else 22.0)
+    share_vs_pitcher = min(1.0, avg_bf / league["pa_per_team_game"])
+
+    spot_by_id = {}
+    if game_pk:
+        g = query_db("SELECT home_team_id, home_lineup, away_lineup FROM games WHERE game_pk = ?", (game_pk,))
+        if g:
+            raw = g[0]["home_lineup"] if g[0]["home_team_id"] == opponent_team_id else g[0]["away_lineup"]
+            for p in (json.loads(raw) if raw else []):
+                if p.get("id"):
+                    spot_by_id[p["id"]] = p.get("order")
 
     rows = []
     for b in batters:
@@ -637,35 +752,70 @@ def estimates_route():
         line = h.get("stat")
         h_counts = matchup_estimate.hitting_counts(line)
         p_counts = matchup_estimate.pitching_counts(pitcher_split.get(side)) if side else None
-        est = matchup_estimate.estimate(h_counts, p_counts, league)
+        base = matchup_estimate.estimate(h_counts, p_counts, league)
+
+        side_usage = pitch_mix.shares((usage.get(side) or {}) if side else {})
+        mix = pitch_mix.mix_matchup(batter_board.get(b["id"]) or {}, side_usage)
+        est = matchup_estimate.apply_mix(base, mix)
+
+        # Rest of the game vs the bullpen: his own (regressed) HR rate vs this
+        # hand against league-average pitching.
+        hr_rest = matchup_estimate.estimate(h_counts, None, league)["hr"]
+        spot = spot_by_id.get(b["id"])
+        pa_exp = matchup_estimate.expected_pa(league["pa_per_team_game"], spot)
+        hr_tonight = matchup_estimate.hr_chance_tonight(est["hr"], hr_rest, pa_exp, share_vs_pitcher)
+
+        breakdown = []
+        hitter_rows = batter_board.get(b["id"]) or {}
+        for pt, sh in sorted(side_usage.items(), key=lambda kv: -kv[1]):
+            if sh < 0.015:
+                continue
+            hr_row, pr_row = hitter_rows.get(pt) or {}, pitcher_board.get(pt) or {}
+            breakdown.append({
+                "type": pt, "name": pitch_mix.PITCH_NAMES[pt], "usage": round(sh * 100),
+                "hitter_xwoba": _fmt_rate3(hr_row.get("xwoba")), "hitter_pa": hr_row.get("pa", 0),
+                "pitcher_xwoba": _fmt_rate3(pr_row.get("xwoba")),
+            })
+
+        ops = est["ob"] + est["slg"]
         pa = h_counts["pa"] if h_counts else 0
         rows.append({
             "id": b["id"],
             "name": h.get("name") or b["full_name"],
             "bats": h.get("bats"),
+            "lineup_spot": spot,
             "vs_hand": {
                 "pa": pa,
                 "avg": (line or {}).get("avg"), "obp": (line or {}).get("obp"),
                 "slg": (line or {}).get("slg"), "ops": (line or {}).get("ops"),
                 "hr": (line or {}).get("homeRuns"),
-                "k_pct": _fmt_pct(h_counts["so"] / pa, 0) if pa else None,
             },
             "est": {
-                "obp": _fmt_rate3(est["ob"]), "obp_num": est["ob"],
-                "k_pct": _fmt_pct(est["so"], 0), "k_num": est["so"],
-                "hr_pct": _fmt_pct(est["hr"], 1), "hr_num": est["hr"],
+                "avg": _fmt_rate3(est["avg"]), "obp": _fmt_rate3(est["ob"]),
+                "slg": _fmt_rate3(est["slg"]), "ops": _fmt_rate3(ops), "ops_num": ops,
+                "hr_tonight": _fmt_pct(hr_tonight, 0), "hr_tonight_num": hr_tonight,
+                "pa_expected": round(pa_exp, 1),
             },
-            "pitcher_bf_vs_side": (p_counts or {}).get("pa", 0),
+            "mix": None if mix is None else {
+                "xwoba_vs_mix": _fmt_rate3(mix["mix"]["xwoba"]),
+                "xwoba_usual": _fmt_rate3(mix["baseline"]["xwoba"]),
+                "diff_num": mix["mix"]["xwoba"] - mix["baseline"]["xwoba"],
+                "breakdown": breakdown,
+            },
         })
-    rows.sort(key=lambda r: r["est"]["obp_num"], reverse=True)
+    rows.sort(key=lambda r: r["est"]["ops_num"], reverse=True)
 
+    lg_ops = league["ob"] + league["slg"]
     return jsonify({
-        "pitcher": {"id": pitcher_id, "throws": throws},
+        "pitcher": {"id": pitcher_id, "throws": throws, "avg_bf": round(avg_bf, 1),
+                    "share_of_game": round(share_vs_pitcher, 2)},
         "season": season,
-        "league": {"obp": _fmt_rate3(league["ob"]), "k_pct": _fmt_pct(league["so"], 0),
-                   "hr_pct": _fmt_pct(league["hr"], 1)},
+        "mix_available": mix_available,
+        "league": {"avg": _fmt_rate3(league["avg"]), "obp": _fmt_rate3(league["ob"]),
+                   "slg": _fmt_rate3(league["slg"]), "ops": _fmt_rate3(lg_ops), "ops_num": lg_ops},
         "rows": rows,
     })
+
 
 @app.get("/api/players")
 def players():

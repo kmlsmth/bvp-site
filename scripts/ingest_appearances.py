@@ -17,7 +17,8 @@ from __future__ import annotations
 import sys
 import time
 import traceback
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -97,7 +98,7 @@ def backfill_team_appearances(conn, team_id: int, as_of_date: str,
 
 
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else date.today().isoformat()
+    target = sys.argv[1] if len(sys.argv) > 1 else datetime.now(ZoneInfo("America/New_York")).date().isoformat()
     if len(sys.argv) <= 2:
         print("Usage: python3 scripts/ingest_appearances.py [YYYY-MM-DD] <team_id>")
         sys.exit(1)

@@ -19,7 +19,6 @@ import sys
 import threading
 import time
 import traceback
-from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -30,7 +29,7 @@ CHECK_INTERVAL_SECONDS = 60 * 60  # check once an hour
 
 def _loop() -> None:
     while True:
-        today = date.today().isoformat()
+        today = ingest_daily.baseball_today()  # US Eastern, not the server's UTC clock
         try:
             ingest_daily.ingest_date(today)
         except Exception:

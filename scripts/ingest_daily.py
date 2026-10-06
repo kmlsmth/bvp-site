@@ -20,7 +20,8 @@ from __future__ import annotations
 import sys
 import time
 import traceback
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 # Make this importable both as a standalone script (python3 scripts/ingest_daily.py,
@@ -34,6 +35,19 @@ import parsing
 import venues as venues_mod
 
 REQUEST_PAUSE_SECONDS = 0.3  # be a polite citizen of a free public API
+
+# MLB's "officialDate" for a game is its US Eastern calendar date. Railway's
+# server clock is UTC, so a plain date.today() there flips to *tomorrow* at
+# 5pm Pacific -- right while that evening's West Coast games are still
+# waiting on lineups / late-announced starters. Every "what's today" in the
+# backend goes through this instead, so the date only rolls over at
+# midnight Eastern, after the last game of the night has started.
+BASEBALL_TZ = ZoneInfo("America/New_York")
+
+
+def baseball_today() -> str:
+    """Today's date (YYYY-MM-DD) on MLB's own calendar (US Eastern)."""
+    return datetime.now(BASEBALL_TZ).date().isoformat()
 
 
 def ingest_date(target_date: str, force: bool = False) -> int:
@@ -249,5 +263,5 @@ def _ingest_matchup(conn, batter_id: int, pitcher_id: int) -> None:
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     force = "--force" in sys.argv[1:]
-    target = args[0] if args else date.today().isoformat()
+    target = args[0] if args else baseball_today()
     ingest_date(target, force=force)

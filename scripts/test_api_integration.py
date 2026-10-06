@@ -310,6 +310,10 @@ def test_live_mlb_endpoints(client) -> None:
     one, two = by_name["Away Hitter One"], by_name["Away Hitter Two"]
     assert one["vs_hand"]["pa"] == 300 and one["vs_hand"]["ops"] == ".901", one
     assert two["vs_hand"]["pa"] == 0 and two["vs_hand"]["ops"] is None and two["mix"] is None, two
+    # Head-to-head: the on-demand pull above stored One as 2-for-6 vs this
+    # reliever; Two has never faced him.
+    assert one["h2h"] == {"ab": 6, "pa": 7, "h": 2, "hr": 1}, one["h2h"]
+    assert two["h2h"] == {"ab": 0, "pa": 0, "h": 0, "hr": 0}, two["h2h"]
     # Pitch mix: 80% sliders to his side, where his xwOBA is .270 vs .420 on
     # fastballs -> the mix grades below his usual and the breakdown says so.
     m = one["mix"]

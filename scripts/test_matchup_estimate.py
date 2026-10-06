@@ -117,6 +117,26 @@ def test_traded_players_use_combined_split():
     print("test_traded_players_use_combined_split OK: García 456 PA, Ramos 327 PA, Peralta 461/269 BF")
 
 
+def test_h2h_at_bats_count_but_dont_swamp():
+    """Kamil: 'don't fully ignore those ABs even if it's only 2 -- it's still data.'
+    A 2-for-2 with a homer moves the projection up, by about what 2 AB are
+    worth next to a full season of evidence -- not to .1000."""
+    est = m.estimate(m.hitting_counts(RICE_VS_RHP), m.pitching_counts(PERALTA_VS_LHH), LEAGUE)
+    h2h = m.h2h_counts({"plate_appearances": 2, "at_bats": 2, "hits": 2, "home_runs": 1,
+                        "doubles": 1, "triples": 0, "total_bases": None})
+    assert h2h["slg"] == 2 + 1 + 3 and h2h["ob"] == 2, h2h  # TB rebuilt from hit types: a double + a HR = 2 + 1 + 3 = 6
+    up = m.apply_h2h(est, h2h)
+    assert all(up[k] > est[k] for k in ("avg", "ob", "slg", "hr")), (up, est)
+    # AVG: (est * 910 + 2) / 912 -- exactly what 2 at-bats are worth here.
+    assert abs(up["avg"] - (est["avg"] * 910 + 2) / 912) < 1e-12
+    assert up["avg"] - est["avg"] < 0.002, (up["avg"], est["avg"])
+    # 0-for-2 moves it down by a similar small amount; no history -> unchanged.
+    down = m.apply_h2h(est, m.h2h_counts({"plate_appearances": 2, "at_bats": 2, "hits": 0, "home_runs": 0}))
+    assert down["avg"] < est["avg"] and m.apply_h2h(est, None) == est
+    assert m.h2h_counts({"plate_appearances": 0, "at_bats": 0}) is None
+    print(f"test_h2h_at_bats_count_but_dont_swamp OK: AVG {est['avg']:.4f} -> 2-for-2 {up['avg']:.4f}, 0-for-2 {down['avg']:.4f}")
+
+
 if __name__ == "__main__":
     test_league_baseline()
     test_rice_vs_peralta_slash_line()
@@ -126,4 +146,5 @@ if __name__ == "__main__":
     test_no_data_falls_back_to_league()
     test_switch_hitters_turn_around()
     test_traded_players_use_combined_split()
+    test_h2h_at_bats_count_but_dont_swamp()
     print("\nAll matchup estimate tests passed.")

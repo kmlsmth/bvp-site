@@ -736,6 +736,10 @@ def estimates_route():
     avg_bf = sum(bf) / len(bf) if bf else (4.5 if is_reliever else 22.0)
     share_vs_pitcher = min(1.0, avg_bf / league["pa_per_team_game"])
 
+    # Stored head-to-head totals vs this pitcher (career), by hitter.
+    h2h_by_id = {r["batter_id"]: r for r in query_db(
+        "SELECT * FROM matchup_career WHERE pitcher_id = ?", (pitcher_id,))}
+
     spot_by_id = {}
     if game_pk:
         g = query_db("SELECT home_team_id, home_lineup, away_lineup FROM games WHERE game_pk = ?", (game_pk,))
@@ -757,6 +761,9 @@ def estimates_route():
         side_usage = pitch_mix.shares((usage.get(side) or {}) if side else {})
         mix = pitch_mix.mix_matchup(batter_board.get(b["id"]) or {}, side_usage)
         est = matchup_estimate.apply_mix(base, mix)
+        # Any head-to-head at-bats he does have count as real evidence on top.
+        h2h = matchup_estimate.h2h_counts(h2h_by_id.get(b["id"]))
+        est = matchup_estimate.apply_h2h(est, h2h)
 
         # Rest of the game vs the bullpen: his own (regressed) HR rate vs this
         # hand against league-average pitching.
@@ -784,6 +791,10 @@ def estimates_route():
             "name": h.get("name") or b["full_name"],
             "bats": h.get("bats"),
             "lineup_spot": spot,
+            # Career head-to-head vs this pitcher (the front end projects
+            # hitters with fewer than 3 AB and shows this next to the name).
+            "h2h": {"ab": h2h["ab"], "pa": h2h["pa"], "h": h2h["avg"], "hr": h2h["hr"]} if h2h
+                   else {"ab": 0, "pa": 0, "h": 0, "hr": 0},
             "vs_hand": {
                 "pa": pa,
                 "avg": (line or {}).get("avg"), "obp": (line or {}).get("obp"),

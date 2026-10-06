@@ -174,3 +174,43 @@ def hr_chance_tonight(p_vs_pitcher: float, p_vs_rest: float, total_pa: float,
     s = max(0.0, min(1.0, share_vs_pitcher))
     n_p, n_r = total_pa * s, total_pa * (1 - s)
     return 1 - (1 - p_vs_pitcher) ** n_p * (1 - p_vs_rest) ** n_r
+
+
+# --- Head-to-head at-bats ------------------------------------------------
+# Hitters with only a couple of at-bats against the pitcher still get a
+# projection, but those at-bats aren't thrown away: they're added on top of
+# the projection as real evidence. The projection counts as the same number
+# of plate appearances / at-bats used to regress the hitter's own numbers
+# (HITTER_STABILIZE), so a 2-for-2 nudges it rather than swamping it.
+
+def h2h_counts(career: dict | None) -> dict | None:
+    """matchup_career row (this site's stored head-to-head totals) -> counts
+    in the same shape as hitting_counts(). Total bases are rebuilt from hit
+    types when MLB left that field out (it sometimes does)."""
+    if not career:
+        return None
+    pa, ab = _i(career.get("plate_appearances")), _i(career.get("at_bats"))
+    if not pa and not ab:
+        return None
+    h, hr = _i(career.get("hits")), _i(career.get("home_runs"))
+    tb = career.get("total_bases")
+    if tb is None:
+        tb = h + _i(career.get("doubles")) + 2 * _i(career.get("triples")) + 3 * hr
+    return {
+        "pa": pa or ab, "ab": ab,
+        "ob": h + _i(career.get("base_on_balls")) + _i(career.get("hit_by_pitch")),
+        "so": _i(career.get("strike_outs")), "hr": hr,
+        "avg": h, "slg": _i(tb),
+    }
+
+
+def apply_h2h(est: dict, h2h: dict | None) -> dict:
+    if not h2h:
+        return dict(est)
+    out = dict(est)
+    for r in RATES + AB_RATES:
+        n = h2h["ab"] if r in AB_RATES else h2h["pa"]
+        if n:
+            k = HITTER_STABILIZE[r]
+            out[r] = (est[r] * k + h2h[r]) / (k + n)
+    return out

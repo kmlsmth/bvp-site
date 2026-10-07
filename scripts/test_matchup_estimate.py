@@ -175,6 +175,48 @@ def test_old_head_to_head_fades():
     print(f"test_old_head_to_head_fades OK: 8 AB (4 in 2026, 4 in 2019) count as {f['ab']:.2f}")
 
 
+def test_hit_chance_tonight():
+    """1+ hit: a league-average line gives exactly the league's hits per PA
+    (39,849 / 183,849 = .2167), and over ~4.2 PA that's about 64%."""
+    assert abs(m.hits_per_pa(LEAGUE, LEAGUE) - 39849 / 183849) < 1e-12
+    p = LEAGUE["hits_per_pa"]
+    assert round(m.hit_chance_tonight(p, p, 4.2, 0.66), 3) == round(1 - (1 - p) ** 4.2, 3) == 0.642
+    # Same hitter, batting 9th instead of 1st -> fewer chances -> lower.
+    pa1, pa9 = m.expected_pa(LEAGUE["pa_per_team_game"], 1), m.expected_pa(LEAGUE["pa_per_team_game"], 9)
+    assert m.hit_chance_tonight(p, p, pa9, 0.66) < m.hit_chance_tonight(p, p, pa1, 0.66) - 0.04
+    # A walk-heavy line with the same AVG gets fewer hit chances per PA.
+    patient = dict(LEAGUE, ob=LEAGUE["ob"] + 0.05)
+    assert m.hits_per_pa(patient, LEAGUE) < m.hits_per_pa(LEAGUE, LEAGUE)
+    print("test_hit_chance_tonight OK: league-average hitter, 4.2 PA -> 64.2%")
+
+
+def test_v3_all_at_bats_and_real_pa():
+    """v3 (backtested on every 2026 game): talent from all at-bats + a
+    platoon factor, and the real spread of starters' plate appearances."""
+    import model_constants as mc
+    same = mc.PLATOON_FACTOR["same"]
+    # No data at all -> league average times the platoon factor.
+    r = m.talent_rates([None, None, None], [None, None, None], LEAGUE, same, m.HITTER_STABILIZE)
+    assert all(abs(r[k] - LEAGUE[k] * same[k]) < 1e-12 for k in m.RATES + m.AB_RATES), r
+    # Riley: all his at-bats (both hands) vs only vs RHP -> both in a sane range.
+    lines = [m.hitting_counts(dict(zip(HIT_KEYS, RILEY[y]))) for y in (2026, 2025, 2024)]
+    b = m.talent_rates(lines, lines, LEAGUE, same, m.HITTER_STABILIZE)
+    assert 0.22 < b["avg"] < 0.25 and 0.28 < b["ob"] < 0.32, b
+    # combine_rates with a league-average pitcher returns the hitter (odds ratio identity).
+    c = m.combine_rates(b, {k: LEAGUE[k] for k in m.RATES + m.AB_RATES}, LEAGUE)
+    assert all(abs(c[k] - b[k]) < 1e-12 for k in c), (c, b)
+    # Real PA spread: 9th-place home starters averaged 3.35 PA in 2026, leadoff away 4.58.
+    d9h, d1a = m.pa_distribution(9, True), m.pa_distribution(1, False)
+    assert abs(sum(w for _, w in d9h) - 1) < 1e-12
+    assert abs(sum(n * w for n, w in d9h) - 3.35) < 0.005 and abs(sum(n * w for n, w in d1a) - 4.575) < 0.005
+    # Averaging over the spread gives a LOWER "at least one" than using the
+    # average PA (that's part of why v2 ran high).
+    p = 0.22
+    mean = sum(n * w for n, w in d9h)
+    assert m.chance_over_pa_distribution(p, p, d9h, 0.66) < m.hit_chance_tonight(p, p, mean, 0.66)
+    print("test_v3_all_at_bats_and_real_pa OK")
+
+
 if __name__ == "__main__":
     test_league_baseline()
     test_rice_vs_peralta_slash_line()
@@ -187,4 +229,6 @@ if __name__ == "__main__":
     test_h2h_at_bats_count_but_dont_swamp()
     test_past_seasons_weighted_5_4_3()
     test_old_head_to_head_fades()
+    test_hit_chance_tonight()
+    test_v3_all_at_bats_and_real_pa()
     print("\nAll matchup estimate tests passed.")

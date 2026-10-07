@@ -167,3 +167,45 @@ def get_boxscore(game_pk: int) -> dict:
     resp = requests.get(url, timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json()
+
+
+# ---- Player / team pages and the game summary ---------------------------
+# All verified live 2026-10-06 against statsapi.mlb.com.
+
+def _get(path: str, params: dict) -> dict:
+    resp = requests.get(f"{BASE_URL}/{path}", params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_person_page(person_id: int) -> dict:
+    """Bio for a player page: name, number, age, position, bats/throws, current team."""
+    return _get(f"people/{person_id}", {"hydrate": "currentTeam"})
+
+
+def get_year_by_year(person_id: int, group: str) -> dict:
+    """Every regular season of his career ("hitting" or "pitching"); a
+    traded player has one row per team that season."""
+    return _get(f"people/{person_id}/stats", {"stats": "yearByYear", "group": group,
+                                              "gameType": REGULAR_SEASON})
+
+
+def get_hitting_gamelog(person_id: int, season: int) -> dict:
+    """Game-by-game hitting lines, regular season + postseason."""
+    return _get(f"people/{person_id}/stats", {"stats": "gameLog", "group": "hitting", "season": season,
+                                              "gameType": REGULAR_AND_POSTSEASON})
+
+
+def get_team_hitting(team_id: int, season: int) -> dict:
+    """One team's hitting: season line plus vs LHP ("vl") / vs RHP ("vr")."""
+    return _get(f"teams/{team_id}/stats", {"stats": "statSplits,season", "group": "hitting",
+                                           "sitCodes": "vl,vr", "season": season,
+                                           "gameType": REGULAR_SEASON})
+
+
+def get_league_team_splits(season: int) -> dict:
+    """Every team's hitting vs LHP and vs RHP (60 rows; default page size is
+    50, hence limit)."""
+    return _get("teams/stats", {"stats": "statSplits", "group": "hitting", "sitCodes": "vl,vr",
+                                "season": season, "gameType": REGULAR_SEASON, "sportIds": 1,
+                                "limit": 100})

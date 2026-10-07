@@ -95,6 +95,7 @@ def league_rates(team_stat_lines: list[dict]) -> dict:
         raise ValueError("no league plate appearances to average")
     out = {r: totals[r] / totals["pa"] for r in RATES}
     out.update({r: totals[r] / totals["ab"] for r in AB_RATES})
+    out["hits_per_pa"] = totals["avg"] / totals["pa"]
     out["pa_per_team_game"] = totals["pa"] / games if games else 38.0
     return out
 
@@ -174,6 +175,29 @@ def hr_chance_tonight(p_vs_pitcher: float, p_vs_rest: float, total_pa: float,
     s = max(0.0, min(1.0, share_vs_pitcher))
     n_p, n_r = total_pa * s, total_pa * (1 - s)
     return 1 - (1 - p_vs_pitcher) ** n_p * (1 - p_vs_rest) ** n_r
+
+
+def _hits_per_pa_raw(avg: float, ob: float) -> float:
+    """Hits per plate appearance from AVG (hits per at-bat) and OBP: the
+    non-at-bat share of PAs (walks + HBP) is (OBP - AVG) / (1 - AVG)."""
+    walks = (ob - avg) / (1 - avg)
+    return avg * (1 - walks)
+
+
+def hits_per_pa(est: dict, league: dict) -> float:
+    """Chance of a hit in one plate appearance, from an estimate's AVG and
+    OBP. Sac flies/bunts aren't in that formula, so it's scaled so a
+    league-average line gives exactly the league's real hits per PA."""
+    lg = _hits_per_pa_raw(league["avg"], league["ob"])
+    scale = league.get("hits_per_pa", lg) / lg
+    return _hits_per_pa_raw(est["avg"], est["ob"]) * scale
+
+
+def hit_chance_tonight(p_vs_pitcher: float, p_vs_rest: float, total_pa: float,
+                       share_vs_pitcher: float) -> float:
+    """Chance of at least one hit: same split as hr_chance_tonight() --
+    this pitcher for his usual share of the game, the bullpen for the rest."""
+    return hr_chance_tonight(p_vs_pitcher, p_vs_rest, total_pa, share_vs_pitcher)
 
 
 # --- Head-to-head at-bats ------------------------------------------------
@@ -261,3 +285,75 @@ def combine_seasons(counts_by_season: list[dict | None],
             continue
         total = {k: (total[k] if total else 0) + w * v for k, v in c.items()}
     return total if total and total["pa"] else None
+
+
+# --- v3: all at-bats + real plate-appearance counts (backtested) ---------
+# Backtest on every 2026 game, June-September (27,756 starting-hitter
+# games; see scripts/backtest.py): the v2 approach -- each hitter judged
+# only on his at-bats vs THIS pitcher's hand, and "team PAs / 9" plate
+# appearances by lineup spot -- said 64.4% "1+ hit" on average; 61.0%
+# happened. These two changes bring it to 62.4% with better accuracy:
+#   1. judge a player on ALL his plate appearances (both hands, 5/4/3
+#      seasons), then adjust for this matchup with the league's platoon
+#      split, letting his own split count PLATOON_REGRESS_PA deep;
+#   2. use the real spread of plate appearances starters get by lineup spot
+#      (model_constants.STARTER_PA_GAMES) instead of one average.
+PLATOON_REGRESS_PA = 1000   # tested 400 / 1000 / 3000: 1000 best (barely)
+
+
+def talent_rates(all_by_season: list[dict | None], hand_by_season: list[dict | None],
+                 league: dict, platoon: dict, stabilize: dict,
+                 k_platoon: float = PLATOON_REGRESS_PA) -> dict:
+    """Rates for a player vs one hand / side.
+    all_by_season: his counts vs BOTH hands, [this season, last, two ago];
+    hand_by_season: the same seasons vs this hand only;
+    platoon: league rate for this matchup type / overall league rate
+    (model_constants.PLATOON_FACTOR["same" or "opp"], or 1s for a switch
+    hitter). Overall talent is regressed toward league (stabilize), scaled
+    by the platoon factor, and his own counts vs this hand are regressed
+    toward that, k_platoon PA (or AB) deep."""
+    o = combine_seasons(all_by_season)
+    hnd = combine_seasons(hand_by_season)
+    out = {}
+    for r in RATES + AB_RATES:
+        den = "ab" if r in AB_RATES else "pa"
+        k = stabilize[r]
+        overall = ((o[r] if o else 0) + league[r] * k) / ((o[den] if o else 0) + k)
+        target = overall * platoon[r]
+        out[r] = ((hnd[r] if hnd else 0) + target * k_platoon) / ((hnd[den] if hnd else 0) + k_platoon)
+    return out
+
+
+def combine_rates(hitter: dict, pitcher: dict, league: dict) -> dict:
+    """Odds-ratio combination of already-regressed hitter and pitcher rates
+    (SLG multiplicative), same as estimate() but without re-regressing."""
+    return {r: (hitter[r] * pitcher[r] / league[r] if r == "slg" else odds_ratio(hitter[r], pitcher[r], league[r]))
+            for r in RATES + AB_RATES}
+
+
+def add_counts(*counts: dict | None) -> dict | None:
+    cs = [c for c in counts if c]
+    if not cs:
+        return None
+    return {k: sum(c[k] for c in cs) for k in cs[0]}
+
+
+def pa_distribution(spot: int | None, home: bool | None) -> list[tuple[int, float]]:
+    """[(plate appearances, probability)] for a starter in this lineup spot,
+    home or away (None = unknown -> pooled)."""
+    import model_constants as mc
+    sides = ["home"] if home is True else ["away"] if home is False else ["home", "away"]
+    spots = [spot] if spot in range(1, 10) else list(range(1, 10))
+    counts: dict = {}
+    for sd in sides:
+        for sp in spots:
+            for n, c in mc.STARTER_PA_GAMES[sd][sp].items():
+                counts[n] = counts.get(n, 0) + c
+    tot = sum(counts.values())
+    return [(n, c / tot) for n, c in sorted(counts.items())]
+
+
+def chance_over_pa_distribution(p_vs_pitcher: float, p_vs_rest: float,
+                                 dist: list[tuple[int, float]], share_vs_pitcher: float) -> float:
+    """Chance of at least one event, averaged over how many PAs he gets."""
+    return sum(w * hr_chance_tonight(p_vs_pitcher, p_vs_rest, n, share_vs_pitcher) for n, w in dist)

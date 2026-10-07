@@ -203,3 +203,81 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
     games_count INTEGER,
     error       TEXT
 );
+
+-- ---- Daily data archive ---------------------------------------------------
+-- What actually happened, game by game, saved from each final box score so
+-- the site builds its own history: the live "our projection vs what
+-- happened" check, games started / plate appearances by lineup spot, and
+-- player game logs. Like pitcher_appearances, game_pk is a plain integer
+-- (no foreign key): games are archived straight from the schedule.
+
+-- One row per final game.
+CREATE TABLE IF NOT EXISTS game_results (
+    game_pk         INTEGER PRIMARY KEY,
+    game_date       TEXT NOT NULL,
+    game_type       TEXT,               -- R / F / D / L / W
+    away_team_id    INTEGER,
+    home_team_id    INTEGER,
+    away_runs       INTEGER,
+    home_runs       INTEGER,
+    away_hits       INTEGER,
+    home_hits       INTEGER,
+    archived_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_game_results_date ON game_results(game_date);
+
+-- Every hitter who batted in a final game. batting_order is the lineup
+-- spot (1-9); started = 1 for the original starter in that spot, 0 for a
+-- substitute (MLB's box score codes "300" = starter in the 3 hole, "301" =
+-- first sub there).
+CREATE TABLE IF NOT EXISTS batter_game_results (
+    game_pk         INTEGER NOT NULL,
+    batter_id       INTEGER NOT NULL,
+    team_id         INTEGER,
+    game_date       TEXT NOT NULL,
+    is_home         INTEGER,
+    batting_order   INTEGER,
+    started         INTEGER,
+    position        TEXT,
+    pa              INTEGER,
+    ab              INTEGER,
+    h               INTEGER,
+    d2              INTEGER,
+    d3              INTEGER,
+    hr              INTEGER,
+    bb              INTEGER,
+    ibb             INTEGER,
+    hbp             INTEGER,
+    so              INTEGER,
+    tb              INTEGER,
+    r               INTEGER,
+    rbi             INTEGER,
+    sb              INTEGER,
+    sf              INTEGER,
+    PRIMARY KEY (game_pk, batter_id)
+);
+CREATE INDEX IF NOT EXISTS idx_batter_results_batter ON batter_game_results(batter_id, game_date);
+
+-- The site's own projection for each starting hitter vs the opposing
+-- starter, saved shortly before first pitch (overwritten on each pre-game
+-- pass until the game starts, so the last write is the pre-game snapshot).
+CREATE TABLE IF NOT EXISTS projection_log (
+    game_pk         INTEGER NOT NULL,
+    game_date       TEXT NOT NULL,
+    pitcher_id      INTEGER NOT NULL,
+    batter_id       INTEGER NOT NULL,
+    team_id         INTEGER,
+    lineup_spot     INTEGER,
+    is_home         INTEGER,
+    est_avg         REAL,
+    est_obp         REAL,
+    est_slg         REAL,
+    hit_chance      REAL,
+    hr_chance       REAL,
+    pa_expected     REAL,
+    starter_share   REAL,
+    model_version   TEXT,
+    logged_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (game_pk, pitcher_id, batter_id)
+);
+CREATE INDEX IF NOT EXISTS idx_projection_log_date ON projection_log(game_date);

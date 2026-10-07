@@ -5,7 +5,9 @@ MLB and Baseball Savant calls are stubbed to return those real responses,
 so everything else -- parsing, the odds-ratio estimate, the pitch-mix
 nudge, HR-tonight -- runs exactly as in production. Includes the 2025 and
 2024 seasons (weighted 4 and 3 against this season's 5) and Yamamoto's
-pitch mix by game date (last 5 starts blended with his season).
+pitch mix by game date (last 5 starts blended with his season). v3: every
+hitter's lines vs BOTH hands (talent from all at-bats, then a platoon
+adjustment) and real plate-appearance counts by lineup spot.
 
 Run: python3 scripts/test_estimates_real.py   (prints the table)
 """
@@ -35,17 +37,26 @@ mlb_api.get_person = lambda pid: {"people": [{"id": pid, "fullName": "Yoshinobu 
 HIT_KEYS = ("plateAppearances", "atBats", "hits", "baseOnBalls", "hitByPitch", "strikeOuts", "homeRuns", "totalBases")
 PIT_KEYS = ("battersFaced",) + HIT_KEYS[1:]
 BATS = {p["id"]: p["batSide"]["code"] for p in FX["people"]["people"]}
+NAMES = {p["id"]: p["fullName"] for p in FX["people"]["people"]}
 
 
 def _people(season: int) -> dict:
-    """MLB-shaped /people response: 2026 as captured; 2025/2024 rebuilt
-    from the captured counting lines (null = no line vs RHP that year)."""
+    """MLB-shaped /people response with BOTH hands (the endpoint is called
+    with sitCodes vl,vr): 2026 vs RHP as captured; everything else rebuilt
+    from the captured counting lines (null = no line that year)."""
     if season == 2026:
-        return FX["people"]
-    return {"people": [{"id": pid, "batSide": {"code": BATS[pid]},
-                        "stats": [{"splits": [{"split": {"code": "vr"}, "stat": dict(zip(HIT_KEYS, line))}]}]
-                        if line else []}
-                       for pid, line in FX["past"][str(season)]["hitters_vs_rhp"]]}
+        vr = {p["id"]: p["stats"][0]["splits"][0]["stat"] for p in FX["people"]["people"] if p.get("stats")}
+        vl = {pid: dict(zip(HIT_KEYS, line)) for pid, line in FX["hitters_vs_lhp_2026"] if line}
+    else:
+        past = FX["past"][str(season)]
+        vr = {pid: dict(zip(HIT_KEYS, line)) for pid, line in past["hitters_vs_rhp"] if line}
+        vl = {pid: dict(zip(HIT_KEYS, line)) for pid, line in past["hitters_vs_lhp"] if line}
+    people = []
+    for pid in BATS:
+        splits = [{"split": {"code": c}, "stat": d[pid]} for c, d in (("vl", vl), ("vr", vr)) if pid in d]
+        people.append({"id": pid, "fullName": NAMES[pid], "batSide": {"code": BATS[pid]},
+                       "stats": [{"splits": splits}] if splits else []})
+    return {"people": people}
 
 
 def _pitcher_vs(season: int) -> dict:
@@ -85,7 +96,7 @@ def main() -> None:
     # Last 5 starts: 24, 27, 24, 24, 26 batters faced -> 25.0 of ~37.8 team PA.
     assert d["pitcher"]["avg_bf"] == 25.0 and d["pitcher"]["share_of_game"] == 0.66, d["pitcher"]
     rows = d["rows"]
-    assert len(rows) == 13 and all(r["est"][k] for r in rows for k in ("avg", "obp", "slg", "ops", "hr_tonight"))
+    assert len(rows) == 13 and all(r["est"][k] for r in rows for k in ("avg", "obp", "slg", "ops", "hr_tonight", "hit_tonight"))
 
     print(f"{'Batter':20} {'B':1}  est AVG/OBP/SLG  OPS  HR  | real vs RHP (PA)          | mix xwOBA vs usual")
     for r in rows:
@@ -98,11 +109,12 @@ def main() -> None:
     names = [r["name"] for r in rows]
     # Sanity on real numbers. Baldwin (.888 OPS vs RHP this year, .808 in
     # 2025) near the top; Albies (under .700 vs RHP all three seasons, and
-    # a splitter-heavy mix he grades poorly against) at the bottom.
-    assert names.index("Drake Baldwin") <= 2 and names[-1] == "Ozzie Albies", names
-    # Past seasons count: Kim's 81 PA this year (.452 OPS) are backed by
-    # 469 PA in 2024-25 at ~.660, so he's projected well above his raw line.
-    assert float(by["Ha-Seong Kim"]["est"]["ops"]) > 0.600, by["Ha-Seong Kim"]["est"]
+    # a splitter-heavy mix he grades poorly against) and Kim (.116 overall
+    # this year: 15-for-129 vs both hands) at the bottom.
+    assert names.index("Drake Baldwin") <= 2 and set(names[-2:]) == {"Ozzie Albies", "Ha-Seong Kim"}, names
+    # All at-bats count: Kim's 81 PA vs RHP this year (.452 OPS) are backed
+    # by 2024-25 and his at-bats vs lefties, so he's projected above his raw line.
+    assert float(by["Ha-Seong Kim"]["est"]["ops"]) > 0.452, by["Ha-Seong Kim"]["est"]
     # Tellez: 9 PA this year (.958 OPS) don't drive it -- 663 PA from
     # 2024-25 (~.700 OPS) do, against an elite pitcher -> below league.
     assert by["Rowdy Tellez"]["est"]["ops_num"] < d["league"]["ops_num"] - 0.05, by["Rowdy Tellez"]["est"]

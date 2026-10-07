@@ -253,6 +253,7 @@ def parse_roster(raw: dict) -> list[dict]:
             "full_name": person.get("fullName"),
             "position_code": position.get("code"),
             "position_type": position.get("type"),  # e.g. "Pitcher", "Outfielder"
+            "position_abbr": position.get("abbreviation"),  # e.g. "SS"
         })
     return players
 
@@ -313,6 +314,8 @@ def parse_pitching_gamelog(raw: dict) -> list[dict]:
             row["game_type"] = split.get("gameType")
             row["game_pk"] = (split.get("game") or {}).get("gamePk")
             row["started"] = bool(row["games_started"])
+            row["opponent"] = (split.get("opponent") or {}).get("name")
+            row["is_home"] = split.get("isHome")
             rows.append(row)
     return rows
 
@@ -375,3 +378,81 @@ def parse_team_hitting_lines(raw: dict) -> list[dict]:
     """mlb_api.get_league_team_hitting() -> one raw hitting line per team."""
     blocks = raw.get("stats") or []
     return [sp.get("stat") or {} for b in blocks for sp in (b.get("splits") or [])]
+
+
+# ---- Daily archive: hitters' lines and final score from a box score ------
+
+def _int(x):
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_boxscore_batting(raw: dict, game_pk: int, game_date: str) -> list[dict]:
+    """Every hitter who batted in this game, both teams. MLB's per-player
+    "battingOrder" code gives the lineup spot and whether he started: "300"
+    = started in the 3 hole, "301" = the first substitute in that spot
+    (verified on the 2026-10-06 Dodgers @ Braves box score). Players with no
+    batting line (pitchers in a DH game, unused bench) are skipped."""
+    rows = []
+    teams = raw.get("teams") or {}
+    for side in ("away", "home"):
+        t = teams.get(side) or {}
+        team_id = (t.get("team") or {}).get("id")
+        for p in (t.get("players") or {}).values():
+            bat = ((p.get("stats") or {}).get("batting")) or {}
+            pa = _int(bat.get("plateAppearances"))
+            code = p.get("battingOrder")
+            if not pa or not code:
+                continue
+            code_i = _int(code)
+            pid = (p.get("person") or {}).get("id")
+            if code_i is None or pid is None:
+                continue
+            rows.append({
+                "game_pk": game_pk, "batter_id": pid, "team_id": team_id, "game_date": game_date,
+                "is_home": 1 if side == "home" else 0,
+                "batting_order": code_i // 100, "started": 1 if code_i % 100 == 0 else 0,
+                "position": (p.get("position") or {}).get("abbreviation"),
+                "pa": pa, "ab": _int(bat.get("atBats")), "h": _int(bat.get("hits")),
+                "d2": _int(bat.get("doubles")), "d3": _int(bat.get("triples")),
+                "hr": _int(bat.get("homeRuns")), "bb": _int(bat.get("baseOnBalls")),
+                "ibb": _int(bat.get("intentionalWalks")), "hbp": _int(bat.get("hitByPitch")),
+                "so": _int(bat.get("strikeOuts")), "tb": _int(bat.get("totalBases")),
+                "r": _int(bat.get("runs")), "rbi": _int(bat.get("rbi")),
+                "sb": _int(bat.get("stolenBases")), "sf": _int(bat.get("sacFlies")),
+            })
+    return rows
+
+
+def parse_game_result(raw: dict, game_pk: int, game_date: str, game_type: str | None) -> dict:
+    """Final score (runs, hits) from a box score's team batting totals."""
+    teams = raw.get("teams") or {}
+
+    def side(s):
+        t = teams.get(s) or {}
+        bat = ((t.get("teamStats") or {}).get("batting")) or {}
+        return (t.get("team") or {}).get("id"), _int(bat.get("runs")), _int(bat.get("hits"))
+    a_id, a_r, a_h = side("away")
+    h_id, h_r, h_h = side("home")
+    return {"game_pk": game_pk, "game_date": game_date, "game_type": game_type,
+            "away_team_id": a_id, "home_team_id": h_id, "away_runs": a_r, "home_runs": h_r,
+            "away_hits": a_h, "home_hits": h_h}
+
+
+def parse_schedule_finals(raw: dict) -> list[dict]:
+    """Final games from a schedule response: [{game_pk, game_date, game_type}].
+    Uses abstractGameState == "Final" (covers "Final", "Game Over",
+    "Completed Early"); postponed / suspended games aren't Final."""
+    out = []
+    for d in raw.get("dates") or []:
+        for g in d.get("games") or []:
+            st = g.get("status") or {}
+            detailed = (st.get("detailedState") or "").lower()
+            if (st.get("abstractGameState") == "Final" and st.get("codedGameState") not in ("D", "C")
+                    and not any(w in detailed for w in ("postponed", "cancelled", "suspended"))):
+                out.append({"game_pk": g.get("gamePk"),
+                            "game_date": g.get("officialDate") or d.get("date"),
+                            "game_type": g.get("gameType")})
+    return out

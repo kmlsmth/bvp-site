@@ -48,7 +48,9 @@ import bullpen as bullpen_module  # noqa: E402
 import db as db_module  # noqa: E402  (shares BVP_DATA_DIR / DB_PATH logic)
 import init_db as init_db_module  # noqa: E402
 import matchup_estimate  # noqa: E402
+import model_constants  # noqa: E402
 import mlb_api  # noqa: E402
+import pages  # noqa: E402
 import parsing  # noqa: E402
 import pitch_mix  # noqa: E402
 import savant_api  # noqa: E402
@@ -66,9 +68,13 @@ init_db_module.init_db(DB_PATH)
 
 app = Flask(__name__)
 
-if not os.environ.get("SKIP_SCHEDULER"):
+def _start_scheduler() -> None:
     import scheduler
-    scheduler.start()
+    import archive as archive_module
+    scheduler.start(
+        on_tick=lambda today: snapshot_pregame_projections(today),
+        on_hourly=lambda today: archive_module.archive_recent(today, days_back=1),
+    )
 
 
 @app.get("/")
@@ -227,23 +233,6 @@ def _pitcher_usage_by_date(pitcher_id: int, season: int) -> dict:
 def _pitcher_usage(pitcher_id: int, season: int) -> dict:
     """{"L": {type: count}, "R": {...}} -- his season pitch mix by batter side."""
     return pitch_mix.total_usage(_pitcher_usage_by_date(pitcher_id, season))
-
-
-def _arsenal_summary(pitcher_id: int, season: int) -> dict | None:
-    """For the starter card: his mix vs lefties and vs righties (most-used
-    first), or None if Statcast data isn't available."""
-    try:
-        usage = _pitcher_usage(pitcher_id, season)
-    except Exception as exc:
-        print(f"[arsenal] {pitcher_id}: {exc}")
-        return None
-    out = {}
-    for side in ("L", "R"):
-        sh = pitch_mix.shares(usage.get(side) or {})
-        out[side] = [{"type": pt, "name": pitch_mix.PITCH_NAMES[pt], "pct": round(v * 100)}
-                     for pt, v in sorted(sh.items(), key=lambda kv: -kv[1]) if v >= 0.015]
-        out[side + "_pitches"] = sum((usage.get(side) or {}).values())
-    return out if (out["L_pitches"] or out["R_pitches"]) else None
 
 
 
@@ -566,9 +555,6 @@ def pitcher_overview_route():
             "throws": person["throws"],
             "season_year": season,
             **bullpen_module.pitcher_overview(totals, gamelog, n=5, before_date=game_date),
-            # Statcast pitch mix vs each side; None (card just omits it) if
-            # Baseball Savant can't be reached.
-            "arsenal": _arsenal_summary(pitcher_id, season),
         }
 
     try:
@@ -684,12 +670,15 @@ def _int_or_zero(x) -> int:
         return 0
 
 
-def _hitters_vs(ids: tuple, sit_code: str, season: int, current_season: int) -> dict:
-    """Each hitter's regular-season line vs one pitching hand in `season`."""
+def _hitters_vs(ids: tuple, season: int, current_season: int) -> dict:
+    """Each hitter's regular-season lines vs left- AND right-handed
+    pitching in `season`, one MLB call: {"vl": {id: ...}, "vr": {id: ...}}."""
     ttl = PAST_SEASON_CACHE_SECONDS if season < current_season else STATS_CACHE_SECONDS
-    return _cached(("hitters-vs", ids, sit_code, season), ttl,
-                   lambda: parsing.parse_hitters_vs_hand(
-                       mlb_api.get_hitters_vs_hand(list(ids), season, sit_code), sit_code))
+
+    def load():
+        raw = mlb_api.get_hitters_vs_hand(list(ids), season, "vl,vr")
+        return {code: parsing.parse_hitters_vs_hand(raw, code) for code in ("vl", "vr")}
+    return _cached(("hitters-vs-both", ids, season), ttl, load)
 
 
 def _pitcher_vs(pitcher_id: int, season: int, current_season: int) -> dict:
@@ -708,16 +697,19 @@ def estimates_route():
     history at all.
 
     Layers (see matchup_estimate.py and pitch_mix.py):
-      1. hitter vs this hand x pitcher vs this hitter's side, relative to
-         league (odds ratio), small samples regressed toward league; this
-         season and the two before it, weighted 5/4/3;
+      1. talent from ALL plate appearances (hitter vs both hands, pitcher vs
+         both sides; this season and the two before it, weighted 5/4/3),
+         regressed toward league, then adjusted to this matchup's platoon
+         edge; hitter x pitcher relative to league (odds ratio);
       2. nudged by pitch mix: how this hitter handles each pitch type
          (Statcast expected stats, same 5/4/3 seasons), weighted by how
          often this pitcher throws each one to hitters from that side --
          his last 5 outings blended with his season;
       3. any head-to-head at-bats added on top, older seasons faded;
-      4. HR tonight: his expected plate appearances (by lineup spot), split
-         between this pitcher (by how deep he usually goes) and the bullpen.
+      4. 1+ hit / 1+ HR: averaged over the real spread of plate appearances
+         starters get in his lineup spot (home/away), split between this
+         pitcher (by how deep he usually goes) and the bullpen.
+    Layers 1 and 4 were backtested on every 2026 game (scripts/backtest.py).
     Query: pitcher, opponent_team, date, optional game (game_pk, for the
     posted lineup) and role=reliever (shorter outings)."""
     pitcher_id = request.args.get("pitcher", type=int)
@@ -727,26 +719,46 @@ def estimates_route():
     game_date = request.args.get("date")
     game_pk = request.args.get("game", type=int)
     is_reliever = request.args.get("role") == "reliever"
+    try:
+        return jsonify(compute_estimates(pitcher_id, opponent_team_id, game_date, game_pk, is_reliever))
+    except EstimatesError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+class EstimatesError(Exception):
+    """MLB couldn't supply what the estimate needs (message is user-facing)."""
+
+
+MODEL_VERSION = "v3"
+
+
+def compute_estimates(pitcher_id: int, opponent_team_id: int, game_date: str | None,
+                      game_pk: int | None = None, is_reliever: bool = False) -> dict:
+    """Everything /api/estimates returns, as a dict (also used by the
+    pre-game snapshot that saves projections to the archive)."""
     season = _season_from(game_date)
 
     try:
         throws = _person(pitcher_id).get("throws")
         if throws not in ("L", "R"):
-            return jsonify({"error": "MLB doesn't list this pitcher's throwing hand."}), 502
+            raise EstimatesError("MLB doesn't list this pitcher's throwing hand.")
         sit_code = "vr" if throws == "R" else "vl"
 
         batters = [b for b in _team_roster(opponent_team_id)
                    if b["position_type"] != "Pitcher" and b["id"]]
         ids = tuple(sorted(b["id"] for b in batters))
-        hitters = _hitters_vs(ids, sit_code, season, season)
+        hitters_both = _hitters_vs(ids, season, season)
+        hitters = hitters_both[sit_code]
         pitcher_split = _pitcher_vs(pitcher_id, season, season)
         league = _cached(("league", season), LEAGUE_CACHE_SECONDS,
                          lambda: matchup_estimate.league_rates(
                              parsing.parse_team_hitting_lines(mlb_api.get_league_team_hitting(season))))
         gamelog = _pitcher_gamelog(pitcher_id, season)
+    except EstimatesError:
+        raise
     except Exception as exc:
         print(f"[estimates] pitcher={pitcher_id} team={opponent_team_id}: {exc}")
-        return jsonify({"error": "Couldn't load season splits from MLB right now."}), 502
+        raise EstimatesError("Couldn't load season splits from MLB right now.")
 
     # The two seasons before this one, weighted 4 and 3 against this
     # season's 5 (matchup_estimate.SEASON_WEIGHTS). Optional: if MLB doesn't
@@ -755,11 +767,11 @@ def estimates_route():
     past_hitters, past_pitcher = [], []
     for past in past_seasons:
         try:
-            past_hitters.append(_hitters_vs(ids, sit_code, past, season))
+            past_hitters.append(_hitters_vs(ids, past, season))
             past_pitcher.append(_pitcher_vs(pitcher_id, past, season))
         except Exception as exc:
             print(f"[estimates] {past} splits unavailable for pitcher={pitcher_id}: {exc}")
-            past_hitters.append({})
+            past_hitters.append({"vl": {}, "vr": {}})
             past_pitcher.append({})
 
     # Pitch-type layer: optional -- if Baseball Savant can't be reached the
@@ -803,9 +815,11 @@ def estimates_route():
         h2h_seasons_by_id.setdefault(r["batter_id"], []).append(r)
 
     spot_by_id = {}
+    batting_home = None   # is the team we're projecting the home team? (None = unknown)
     if game_pk:
         g = query_db("SELECT home_team_id, home_lineup, away_lineup FROM games WHERE game_pk = ?", (game_pk,))
         if g:
+            batting_home = g[0]["home_team_id"] == opponent_team_id
             raw = g[0]["home_lineup"] if g[0]["home_team_id"] == opponent_team_id else g[0]["away_lineup"]
             for p in (json.loads(raw) if raw else []):
                 if p.get("id"):
@@ -814,18 +828,32 @@ def estimates_route():
     rows = []
     for b in batters:
         h = hitters.get(b["id"]) or {}
-        bats = h.get("bats") or next((ph[b["id"]].get("bats") for ph in past_hitters
-                                      if (ph.get(b["id"]) or {}).get("bats")), None)
+        bats = h.get("bats") or next((ph[code][b["id"]].get("bats") for ph in past_hitters for code in ("vl", "vr")
+                                      if (ph[code].get(b["id"]) or {}).get("bats")), None)
         side = matchup_estimate.facing_side(bats, throws)
         line = h.get("stat")
-        # This season + the two before it (5/4/3), for hitter and pitcher.
-        h_counts = matchup_estimate.combine_seasons(
-            [matchup_estimate.hitting_counts(line)] +
-            [matchup_estimate.hitting_counts((ph.get(b["id"]) or {}).get("stat")) for ph in past_hitters])
-        p_counts = matchup_estimate.combine_seasons(
-            [matchup_estimate.pitching_counts(pitcher_split.get(side))] +
-            [matchup_estimate.pitching_counts(pp.get(side)) for pp in past_pitcher]) if side else None
-        base = matchup_estimate.estimate(h_counts, p_counts, league)
+        # Talent from ALL his plate appearances (both hands) and all the
+        # pitcher's batters faced, this season + the two before (5/4/3),
+        # then adjusted to this matchup's platoon edge (see
+        # matchup_estimate.talent_rates -- backtested on every 2026 game).
+        seasons = [hitters_both] + past_hitters
+        pitchers = [pitcher_split] + past_pitcher
+
+        def hit_line(d, code):
+            return matchup_estimate.hitting_counts(((d.get(code) or {}).get(b["id"]) or {}).get("stat"))
+        h_all = [matchup_estimate.add_counts(hit_line(d, "vl"), hit_line(d, "vr")) for d in seasons]
+        h_hand = [hit_line(d, sit_code) for d in seasons]
+        p_all = [matchup_estimate.add_counts(matchup_estimate.pitching_counts(d.get("L")),
+                                             matchup_estimate.pitching_counts(d.get("R"))) for d in pitchers]
+        p_side = [matchup_estimate.pitching_counts(d.get(side)) if side else None for d in pitchers]
+        ones = {r: 1.0 for r in matchup_estimate.RATES + matchup_estimate.AB_RATES}
+        platoon = (model_constants.PLATOON_FACTOR["same" if side == throws else "opp"] if side else ones)
+        hitter_platoon = ones if bats == "S" else platoon   # switch hitters always have the platoon edge
+        b_rates = matchup_estimate.talent_rates(h_all, h_hand, league, hitter_platoon,
+                                                matchup_estimate.HITTER_STABILIZE)
+        p_rates = matchup_estimate.talent_rates(p_all, p_side if side else p_all, league, platoon,
+                                                matchup_estimate.PITCHER_STABILIZE)
+        base = matchup_estimate.combine_rates(b_rates, p_rates, league)
 
         # His recent pitch mix (last 5 outings) blended with his season mix.
         side_usage = pitch_mix.blended_shares(usage_by_date, side, game_date) if side and usage_by_date else {}
@@ -841,12 +869,19 @@ def estimates_route():
                         if b["id"] in h2h_seasons_by_id else h2h)
         est = matchup_estimate.apply_h2h(est, h2h_weighted)
 
-        # Rest of the game vs the bullpen: his own (regressed) HR rate vs this
-        # hand against league-average pitching.
-        hr_rest = matchup_estimate.estimate(h_counts, None, league)["hr"]
+        # Rest of the game vs the bullpen: him against a league-average
+        # pitcher of this matchup type.
+        vs_pen = matchup_estimate.combine_rates(
+            b_rates, {r: league[r] * hitter_platoon[r] for r in hitter_platoon}, league)
         spot = spot_by_id.get(b["id"])
-        pa_exp = matchup_estimate.expected_pa(league["pa_per_team_game"], spot)
-        hr_tonight = matchup_estimate.hr_chance_tonight(est["hr"], hr_rest, pa_exp, share_vs_pitcher)
+        # The real spread of plate appearances starters get in this lineup
+        # spot, home or away (model_constants.STARTER_PA_GAMES).
+        dist = matchup_estimate.pa_distribution(spot, batting_home)
+        pa_exp = sum(n * w for n, w in dist)
+        hr_tonight = matchup_estimate.chance_over_pa_distribution(est["hr"], vs_pen["hr"], dist, share_vs_pitcher)
+        hit_tonight = matchup_estimate.chance_over_pa_distribution(
+            matchup_estimate.hits_per_pa(est, league), matchup_estimate.hits_per_pa(vs_pen, league),
+            dist, share_vs_pitcher)
 
         breakdown = []
         for pt, sh in sorted(side_usage.items(), key=lambda kv: -kv[1]):
@@ -880,7 +915,9 @@ def estimates_route():
                 "avg": _fmt_rate3(est["avg"]), "obp": _fmt_rate3(est["ob"]),
                 "slg": _fmt_rate3(est["slg"]), "ops": _fmt_rate3(ops), "ops_num": ops,
                 "hr_tonight": _fmt_pct(hr_tonight, 0), "hr_tonight_num": hr_tonight,
+                "hit_tonight": _fmt_pct(hit_tonight, 0), "hit_tonight_num": hit_tonight,
                 "pa_expected": round(pa_exp, 1),
+                "avg_num": est["avg"], "obp_num": est["ob"], "slg_num": est["slg"],
             },
             "mix": None if mix is None else {
                 "xwoba_vs_mix": _fmt_rate3(mix["mix"]["xwoba"]),
@@ -892,14 +929,312 @@ def estimates_route():
     rows.sort(key=lambda r: r["est"]["ops_num"], reverse=True)
 
     lg_ops = league["ob"] + league["slg"]
-    return jsonify({
+    return {
         "pitcher": {"id": pitcher_id, "throws": throws, "avg_bf": round(avg_bf, 1),
                     "share_of_game": round(share_vs_pitcher, 2)},
         "season": season,
+        "model_version": MODEL_VERSION,
+        "batting_home": batting_home,
         "mix_available": mix_available,
         "league": {"avg": _fmt_rate3(league["avg"]), "obp": _fmt_rate3(league["ob"]),
                    "slg": _fmt_rate3(league["slg"]), "ops": _fmt_rate3(lg_ops), "ops_num": lg_ops},
         "rows": rows,
+    }
+
+
+# ---- Player / team pages and the game summary --------------------------
+
+PAGE_CACHE_SECONDS = 60 * 60
+
+
+def _league_ranks(season: int) -> dict:
+    return _cached(("league-ranks", season), LEAGUE_CACHE_SECONDS,
+                   lambda: pages.league_ranks(mlb_api.get_league_team_splits(season)))
+
+
+def _team_lines(team_id: int, season: int) -> dict:
+    return _cached(("team-lines", team_id, season), PAGE_CACHE_SECONDS,
+                   lambda: pages.team_lines(mlb_api.get_team_hitting(team_id, season)))
+
+
+def _games_for_team(team_id: int, game_date: str) -> list[dict]:
+    return query_db(
+        """
+        SELECT g.game_pk, g.game_date, g.game_date_time, g.home_team_id, g.away_team_id,
+               ht.name AS home_team, at.name AS away_team,
+               g.home_probable_pitcher_id, hp.full_name AS home_probable_pitcher,
+               g.away_probable_pitcher_id, ap.full_name AS away_probable_pitcher
+        FROM games g
+        LEFT JOIN teams ht ON ht.id = g.home_team_id
+        LEFT JOIN teams at ON at.id = g.away_team_id
+        LEFT JOIN players hp ON hp.id = g.home_probable_pitcher_id
+        LEFT JOIN players ap ON ap.id = g.away_probable_pitcher_id
+        WHERE g.game_date = ? AND (g.home_team_id = ? OR g.away_team_id = ?)
+        ORDER BY g.game_date_time
+        """, (game_date, team_id, team_id))
+
+
+def _team_game_today(team_id: int, game_date: str | None) -> dict | None:
+    """His team's game on game_date (first game of a doubleheader), from the
+    opposing side's point of view: opponent and the opposing probable starter."""
+    if not game_date or not team_id:
+        return None
+    rows = _games_for_team(team_id, game_date)
+    if not rows:
+        return None
+    g = rows[0]
+    home = g["home_team_id"] == team_id
+    return {"game_pk": g["game_pk"], "date": g["game_date"], "time": g["game_date_time"], "is_home": home,
+            "opponent": g["away_team"] if home else g["home_team"],
+            "opponent_id": g["away_team_id"] if home else g["home_team_id"],
+            "own_starter": {"id": g["home_probable_pitcher_id"] if home else g["away_probable_pitcher_id"],
+                            "name": g["home_probable_pitcher"] if home else g["away_probable_pitcher"]},
+            "opp_starter": {"id": g["away_probable_pitcher_id"] if home else g["home_probable_pitcher_id"],
+                            "name": g["away_probable_pitcher"] if home else g["home_probable_pitcher"]}}
+
+
+def _h2h_line(batter_id: int, pitcher_id: int) -> dict | None:
+    rows = query_db("SELECT * FROM matchup_career WHERE batter_id = ? AND pitcher_id = ?", (batter_id, pitcher_id))
+    if not rows:
+        return None
+    r = rows[0]
+    c = {"pa": r.get("plate_appearances") or 0, "ab": r.get("at_bats") or 0, "h": r.get("hits") or 0,
+         "d2": r.get("doubles") or 0, "d3": r.get("triples") or 0, "hr": r.get("home_runs") or 0,
+         "bb": r.get("base_on_balls") or 0, "hbp": r.get("hit_by_pitch") or 0, "so": r.get("strike_outs") or 0,
+         "sf": r.get("sac_flies") or 0, "rbi": r.get("rbi") or 0, "sb": 0, "g": None}
+    c["tb"] = r.get("total_bases") if r.get("total_bases") is not None else (
+        c["h"] + c["d2"] + 2 * c["d3"] + 3 * c["hr"])
+    return pages.hit_line(c)
+
+
+@app.get("/api/player")
+def player_route():
+    """A player page. Hitters: last 3 seasons, this season vs LHP / RHP,
+    last 7 / 15 / 30 games, recent game log, and today's matchup (with his
+    history vs today's opposing starter). Pitchers: last 3 seasons, this
+    season vs LHH / RHH, last 5 starts (or relief outings), today's start.
+    Query: id, date."""
+    pid = request.args.get("id", type=int)
+    if not pid:
+        return jsonify({"error": "id query param is required"}), 400
+    game_date = request.args.get("date")
+    season = _season_from(game_date)
+
+    def build():
+        raw = mlb_api.get_person_page(pid)
+        p = (raw.get("people") or [{}])[0]
+        pos = p.get("primaryPosition") or {}
+        team = p.get("currentTeam") or {}
+        is_pitcher = pos.get("type") == "Pitcher"
+        out = {"id": pid, "name": p.get("fullName"), "number": p.get("primaryNumber"), "age": p.get("currentAge"),
+               "position": pos.get("abbreviation"), "bats": (p.get("batSide") or {}).get("code"),
+               "throws": (p.get("pitchHand") or {}).get("code"),
+               "team": {"id": team.get("id"), "name": team.get("name")},
+               "kind": "pitcher" if is_pitcher else "hitter", "season": season}
+        if is_pitcher:
+            out["seasons"] = pages.by_season(mlb_api.get_year_by_year(pid, "pitching"), "pitching")
+            out["vs_hand"] = pages.vs_hand(mlb_api.get_pitcher_vs_hand(pid, season), "pitching")
+            log = sorted((g for g in _pitcher_gamelog(pid, season) if g.get("game_date")),
+                         key=lambda g: g["game_date"], reverse=True)
+            starter = sum(1 for g in log if g.get("started")) >= max(1, len(log) // 2)
+            recent = [g for g in log if bool(g.get("started")) == starter][:5 if starter else 10]
+            out["role"] = "starter" if starter else "reliever"
+            out["recent"] = [{"date": g["game_date"], "opponent": g.get("opponent"), "is_home": g.get("is_home"),
+                              "postseason": g.get("game_type") not in (None, "R"),
+                              "ip": f"{(g.get('outs') or 0) // 3}.{(g.get('outs') or 0) % 3}",
+                              "h": g.get("hits"), "er": g.get("earned_runs"), "bb": g.get("base_on_balls"),
+                              "so": g.get("strike_outs"), "pitches": g.get("pitches")} for g in recent]
+        else:
+            out["seasons"] = pages.by_season(mlb_api.get_year_by_year(pid, "hitting"), "hitting")
+            hv = mlb_api.get_hitters_vs_hand([pid], season, "vl,vr")
+            out["vs_hand"] = pages.vs_hand((hv.get("people") or [{}])[0], "hitting")
+            games = pages.hitting_games(mlb_api.get_hitting_gamelog(pid, season))
+            out["recent"] = pages.recent_hitting(games)
+            out["game_log"] = pages.game_log_rows(games, 10)
+        today = _team_game_today(team.get("id"), game_date)
+        if today and not is_pitcher and today["opp_starter"]["id"]:
+            today["h2h"] = _h2h_line(pid, today["opp_starter"]["id"])
+            today["opp_starter"]["throws"] = _person(today["opp_starter"]["id"]).get("throws")
+        out["today"] = today
+        return out
+
+    try:
+        return jsonify(_cached(("player-page", pid, game_date), PAGE_CACHE_SECONDS, build))
+    except Exception as exc:
+        print(f"[player page] {pid}: {exc}")
+        return jsonify({"error": "Couldn't load this player from MLB right now."}), 502
+
+
+@app.get("/api/team")
+def team_route():
+    """A team page: hitting this season and vs LHP / RHP with MLB rank (by
+    OPS), today's game, home park factors, and the active roster.
+    Bullpen workload comes from /api/bullpen. Query: id, date."""
+    tid = request.args.get("id", type=int)
+    if not tid:
+        return jsonify({"error": "id query param is required"}), 400
+    game_date = request.args.get("date")
+    season = _season_from(game_date)
+
+    def build():
+        lines = _team_lines(tid, season)
+        ranks = _league_ranks(season)
+        roster = _team_roster(tid)
+        name_rows = query_db("SELECT name FROM teams WHERE id = ?", (tid,))
+        park = query_db(
+            """
+            SELECT v.name, v.hr_factor, v.hit_factor, v.roof_type
+            FROM games g JOIN venues v ON v.id = g.venue_id
+            WHERE g.home_team_id = ? AND g.game_type = 'R'
+            ORDER BY g.game_date DESC LIMIT 1
+            """, (tid,)) or query_db(
+            "SELECT v.name, v.hr_factor, v.hit_factor, v.roof_type FROM games g JOIN venues v ON v.id = g.venue_id "
+            "WHERE g.home_team_id = ? ORDER BY g.game_date DESC LIMIT 1", (tid,))
+        return {
+            "id": tid, "name": name_rows[0]["name"] if name_rows else None, "season": season,
+            "hitting": {"season": lines["season"],
+                        "L": lines["L"], "L_rank": ranks["L"].get(tid),
+                        "R": lines["R"], "R_rank": ranks["R"].get(tid),
+                        "teams": ranks["teams"]["L"], "league": ranks["league"]},
+            "park": park[0] if park else None,
+            "today": _team_game_today(tid, game_date),
+            "hitters": [{"id": p["id"], "name": p["full_name"], "position": p.get("position_abbr")}
+                        for p in roster if p["position_type"] != "Pitcher"],
+            "pitchers": [{"id": p["id"], "name": p["full_name"]} for p in roster if p["position_type"] == "Pitcher"],
+        }
+
+    try:
+        return jsonify(_cached(("team-page", tid, game_date), PAGE_CACHE_SECONDS, build))
+    except Exception as exc:
+        print(f"[team page] {tid}: {exc}")
+        return jsonify({"error": "Couldn't load this team from MLB right now."}), 502
+
+
+@app.get("/api/summary")
+def summary_route():
+    """Game summary: each lineup's season hitting vs the opposing starter's
+    throwing hand, with its MLB rank (by OPS) and the league line for
+    comparison. (Starters, bullpens, park and weather come from the data the
+    game page already loads.) Query: game, date."""
+    game_pk = request.args.get("game", type=int)
+    game_date = request.args.get("date")
+    if not game_pk:
+        return jsonify({"error": "game query param is required"}), 400
+    season = _season_from(game_date)
+    g = query_db("SELECT home_team_id, away_team_id, home_probable_pitcher_id, away_probable_pitcher_id "
+                 "FROM games WHERE game_pk = ?", (game_pk,))
+    if not g:
+        return jsonify({"error": "unknown game"}), 404
+    g = g[0]
+    try:
+        ranks = _league_ranks(season)
+        out = {"season": season, "teams": ranks["teams"]["L"], "sides": {}}
+        for side, team_id, opp_pitcher in (("away", g["away_team_id"], g["home_probable_pitcher_id"]),
+                                           ("home", g["home_team_id"], g["away_probable_pitcher_id"])):
+            throws = _person(opp_pitcher).get("throws") if opp_pitcher else None
+            lines = _team_lines(team_id, season)
+            out["sides"][side] = {
+                "team_id": team_id, "vs": throws,
+                "line": lines.get(throws) if throws else None,
+                "rank": ranks[throws].get(team_id) if throws else None,
+                "league": ranks["league"].get(throws) if throws else None,
+                "season_line": lines["season"],
+            }
+        return jsonify(out)
+    except Exception as exc:
+        print(f"[summary] game {game_pk}: {exc}")
+        return jsonify({"error": "Couldn't load team splits from MLB right now."}), 502
+
+
+
+def snapshot_pregame_projections(game_date: str, now_utc=None, horizon_hours: float = 3.0) -> int:
+    """Daily archive: save the site's projection for every posted starting
+    hitter vs the opposing probable starter, for games starting within
+    `horizon_hours`. Runs on every pre-game scheduler pass, overwriting until
+    first pitch, so the stored row is the last pre-game projection. Returns
+    rows written."""
+    from datetime import datetime, timezone
+    now_utc = now_utc or datetime.now(timezone.utc)
+    games = query_db("SELECT game_pk, game_date, game_date_time, home_team_id, away_team_id, "
+                     "home_probable_pitcher_id, away_probable_pitcher_id, home_lineup, away_lineup "
+                     "FROM games WHERE game_date = ?", (game_date,))
+    written = 0
+    conn = db_module.connect(DB_PATH)
+    try:
+        for g in games:
+            try:
+                start = datetime.fromisoformat((g["game_date_time"] or "").replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            mins = (start - now_utc).total_seconds() / 60
+            if mins <= 0 or mins > horizon_hours * 60:
+                continue   # already started (keep the last pre-game write) or too early
+            for bat_team, lineup_raw, pitcher_id in (
+                    (g["home_team_id"], g["home_lineup"], g["away_probable_pitcher_id"]),
+                    (g["away_team_id"], g["away_lineup"], g["home_probable_pitcher_id"])):
+                if not lineup_raw or not pitcher_id:
+                    continue
+                try:
+                    est = compute_estimates(pitcher_id, bat_team, game_date, g["game_pk"])
+                except EstimatesError as exc:
+                    print(f"[snapshot] game {g['game_pk']} pitcher {pitcher_id}: {exc}")
+                    continue
+                for r in est["rows"]:
+                    if not r.get("lineup_spot"):
+                        continue   # bench: only starters are logged
+                    e = r["est"]
+                    db_module.upsert_projection(conn, {
+                        "game_pk": g["game_pk"], "game_date": game_date, "pitcher_id": pitcher_id,
+                        "batter_id": r["id"], "team_id": bat_team, "lineup_spot": r["lineup_spot"],
+                        "is_home": 1 if est.get("batting_home") else 0,
+                        "est_avg": e["avg_num"], "est_obp": e["obp_num"], "est_slg": e["slg_num"],
+                        "hit_chance": e["hit_tonight_num"], "hr_chance": e["hr_tonight_num"],
+                        "pa_expected": e["pa_expected"], "starter_share": est["pitcher"]["share_of_game"],
+                        "model_version": est["model_version"],
+                    })
+                    written += 1
+                conn.commit()
+    finally:
+        conn.close()
+    if written:
+        print(f"[snapshot] {game_date}: {written} projection rows saved")
+    return written
+
+
+@app.get("/api/archive")
+def archive_route():
+    """Daily data archive: what's been saved, and (once games are final) how
+    the saved pre-game projections compare with what happened -- by
+    predicted 1+ hit range. Query: optional since (YYYY-MM-DD)."""
+    since = request.args.get("since") or "0000-00-00"
+    counts = {
+        "games": query_db("SELECT COUNT(*) AS n, MIN(game_date) AS first, MAX(game_date) AS last "
+                          "FROM game_results WHERE game_date >= ?", (since,))[0],
+        "batter_lines": query_db("SELECT COUNT(*) AS n FROM batter_game_results WHERE game_date >= ?", (since,))[0]["n"],
+        "projections": query_db("SELECT COUNT(*) AS n FROM projection_log WHERE game_date >= ?", (since,))[0]["n"],
+    }
+    rows = query_db(
+        """
+        SELECT p.hit_chance, p.hr_chance, b.h, b.hr, b.pa
+        FROM projection_log p
+        JOIN batter_game_results b ON b.game_pk = p.game_pk AND b.batter_id = p.batter_id AND b.started = 1
+        WHERE p.game_date >= ?
+        """, (since,))
+    buckets = []
+    for lo, hi in ((0, .5), (.5, .55), (.55, .6), (.6, .65), (.65, .7), (.7, 1.01)):
+        b = [r for r in rows if r["hit_chance"] is not None and lo <= r["hit_chance"] < hi]
+        if b:
+            buckets.append({"range": f"{lo:.0%}-{min(hi, 1):.0%}", "n": len(b),
+                            "predicted": round(sum(r["hit_chance"] for r in b) / len(b), 3),
+                            "actual": round(sum(1 for r in b if (r["h"] or 0) > 0) / len(b), 3)})
+    hr_rows = [r for r in rows if r["hr_chance"] is not None]
+    return jsonify({
+        "counts": counts,
+        "graded": len(rows),
+        "hit_calibration": buckets,
+        "hr": None if not hr_rows else {
+            "predicted": round(sum(r["hr_chance"] for r in hr_rows) / len(hr_rows), 3),
+            "actual": round(sum(1 for r in hr_rows if (r["hr"] or 0) > 0) / len(hr_rows), 3)},
     })
 
 
@@ -921,5 +1256,11 @@ def health():
     return jsonify({"status": "ok"})
 
 
+# Started last, once every function the scheduler hooks call is defined.
+if not os.environ.get("SKIP_SCHEDULER"):
+    _start_scheduler()
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
+

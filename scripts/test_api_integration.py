@@ -265,7 +265,7 @@ def test_live_mlb_endpoints(client) -> None:
             return {"people": [{"id": 139001, "fullName": "Away Hitter One", "batSide": {"code": "S"}}]}
         return {"people": [
             {"id": 139001, "fullName": "Away Hitter One", "batSide": {"code": "S"},
-             "stats": [{"splits": [{"split": {"code": sit_code}, "stat": {
+             "stats": [{"splits": [{"split": {"code": "vl"}, "stat": {
                  "plateAppearances": 300, "atBats": 265, "hits": 80, "baseOnBalls": 30,
                  "hitByPitch": 2, "strikeOuts": 50, "homeRuns": 15, "totalBases": 140,
                  "avg": ".302", "obp": ".373", "slg": ".528", "ops": ".901"}}]}]},
@@ -308,7 +308,7 @@ def test_live_mlb_endpoints(client) -> None:
     resp = client.get("/api/estimates?pitcher=555666&opponent_team=139&date=2026-10-05&role=reliever")
     assert resp.status_code == 200, resp.status_code
     est = resp.get_json()
-    assert est["pitcher"]["throws"] == "L" and seen["sit_code"] == "vl", (est["pitcher"], seen)
+    assert est["pitcher"]["throws"] == "L" and seen["sit_code"] == "vl,vr", (est["pitcher"], seen)  # both hands, one call
     assert seen["seasons"] == {2026, 2025, 2024}, seen  # this season + the two before (5/4/3)
     assert est["league"]["obp"] == ".317" and est["mix_available"], est["league"]  # 1900/6000
     by_name = {r["name"]: r for r in est["rows"]}

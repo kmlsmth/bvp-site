@@ -253,3 +253,47 @@ def upsert_matchup_season(conn: sqlite3.Connection, row: dict) -> None:
         """,
         [row.get(c) for c in cols],
     )
+
+
+# ---- Daily archive -------------------------------------------------------
+
+def _upsert(conn: sqlite3.Connection, table: str, row: dict, keys: tuple, cols: list[str]) -> None:
+    all_cols = list(keys) + [c for c in cols if c not in keys]
+    placeholders = ", ".join("?" for _ in all_cols)
+    update = ", ".join(f"{c} = excluded.{c}" for c in all_cols if c not in keys)
+    conn.execute(
+        f"INSERT INTO {table} ({', '.join(all_cols)}) VALUES ({placeholders}) "
+        f"ON CONFLICT({', '.join(keys)}) DO UPDATE SET {update}",
+        [row.get(c) for c in all_cols],
+    )
+
+
+GAME_RESULT_COLS = ["game_date", "game_type", "away_team_id", "home_team_id",
+                    "away_runs", "home_runs", "away_hits", "home_hits"]
+BATTER_RESULT_COLS = ["team_id", "game_date", "is_home", "batting_order", "started", "position",
+                      "pa", "ab", "h", "d2", "d3", "hr", "bb", "ibb", "hbp", "so", "tb",
+                      "r", "rbi", "sb", "sf"]
+PROJECTION_COLS = ["game_date", "team_id", "lineup_spot", "is_home", "est_avg", "est_obp", "est_slg",
+                   "hit_chance", "hr_chance", "pa_expected", "starter_share", "model_version"]
+
+
+def upsert_game_result(conn: sqlite3.Connection, row: dict) -> None:
+    _upsert(conn, "game_results", row, ("game_pk",), GAME_RESULT_COLS)
+
+
+def upsert_batter_result(conn: sqlite3.Connection, row: dict) -> None:
+    _upsert(conn, "batter_game_results", row, ("game_pk", "batter_id"), BATTER_RESULT_COLS)
+
+
+def upsert_projection(conn: sqlite3.Connection, row: dict) -> None:
+    conn.execute(
+        "INSERT INTO projection_log (game_pk, pitcher_id, batter_id, " + ", ".join(PROJECTION_COLS) +
+        ", logged_at) VALUES (?, ?, ?, " + ", ".join("?" for _ in PROJECTION_COLS) + ", datetime('now')) "
+        "ON CONFLICT(game_pk, pitcher_id, batter_id) DO UPDATE SET " +
+        ", ".join(f"{c} = excluded.{c}" for c in PROJECTION_COLS) + ", logged_at = datetime('now')",
+        [row.get("game_pk"), row.get("pitcher_id"), row.get("batter_id")] + [row.get(c) for c in PROJECTION_COLS],
+    )
+
+
+def game_archived(conn: sqlite3.Connection, game_pk: int) -> bool:
+    return conn.execute("SELECT 1 FROM game_results WHERE game_pk = ?", (game_pk,)).fetchone() is not None

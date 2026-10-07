@@ -33,14 +33,30 @@ TICK_SECONDS = 10 * 60          # pre-game pass cadence
 HOURLY_EVERY_N_TICKS = 6        # 6 x 10 min = the original hourly work
 
 
+_hooks = {"on_tick": None, "on_hourly": None}
+
+
+def _run_hook(name: str, today: str) -> None:
+    fn = _hooks.get(name)
+    if not fn:
+        return
+    try:
+        fn(today)
+    except Exception:
+        print(f"[scheduler] {name} failed:")
+        traceback.print_exc()
+
+
 def _loop() -> None:
     tick = 0
     while True:
         today = ingest_daily.baseball_today()  # US Eastern, not the server's UTC clock
         if tick % HOURLY_EVERY_N_TICKS == 0:
             _hourly(today)
+            _run_hook("on_hourly", today)      # daily archive: final box scores
         # Has its own error handling; a bad pass just waits for the next tick.
         ingest_daily.pregame_refresh(today)
+        _run_hook("on_tick", today)            # daily archive: pre-game projections
         tick += 1
         time.sleep(TICK_SECONDS)
 
@@ -63,7 +79,12 @@ def _hourly(today: str) -> None:
     ingest_daily.refresh_probable_pitchers(today)
 
 
-def start() -> None:
+def start(on_tick=None, on_hourly=None) -> None:
+    """on_tick(today) runs after every pre-game pass (every 10 min);
+    on_hourly(today) after the hourly work. Both are the daily archive's
+    hooks (api/app.py), kept here as callbacks so this module doesn't import
+    the web app."""
+    _hooks["on_tick"], _hooks["on_hourly"] = on_tick, on_hourly
     thread = threading.Thread(target=_loop, name="daily-ingestion", daemon=True)
     thread.start()
     print("[scheduler] background daily ingestion thread started")

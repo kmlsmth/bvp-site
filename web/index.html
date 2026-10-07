@@ -190,7 +190,6 @@
   .sp-stats td { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; padding: 6px 0 6px 6px; border-top: 1px solid var(--line); white-space: nowrap; }
   .sp-stats th:first-child, .sp-stats td:first-child { text-align: left; padding-left: 0; font-family: var(--font-body); }
   .sp-stats td:first-child { color: var(--muted); font-size: 12px; white-space: normal; }
-  .sp-foot { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
   .sp-tba { color: var(--muted); font-size: 13px; margin-top: 8px; }
 
   .empty-day { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; }
@@ -281,6 +280,7 @@
   .h2h-line { display: block; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
   .est-head strong { color: var(--ink); }
   table.lineup.est { min-width: 600px; }
+  table.lineup.est thead th { white-space: nowrap; }
   table.lineup.est thead tr.grp-row th { text-align: center; font-size: 9.5px; letter-spacing: 0.08em; padding-bottom: 2px; border-bottom: none; }
   table.lineup.est thead th { padding-left: 7px; padding-right: 7px; }
   table.lineup.est tbody td { padding-left: 7px; padding-right: 7px; }
@@ -304,8 +304,6 @@
   table.mix-table td { padding: 3px 10px 3px 0; text-align: right; font-family: var(--font-mono); background: none !important; border: none; position: static; white-space: nowrap; }
   .mix-pa { color: var(--muted); font-size: 10.5px; }
   .mix-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
-  .sp-arsenal { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
-  .sp-arsenal strong { color: var(--ink); font-weight: 600; }
 
   .no-history-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 2px 2px; }
 
@@ -344,6 +342,71 @@
     .weather-card { gap: 16px; }
     .wx-tiles { width: 100%; justify-content: space-between; gap: 10px; }
   }
+
+
+  /* ---- Links to player / team pages ---- */
+  a.plink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
+  a.plink:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ---- Game summary card ---- */
+  .summary-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .sm-grid { display: grid; grid-template-columns: minmax(78px, 0.8fr) 1fr 1fr; column-gap: 12px; row-gap: 0; }
+  .sm-grid > div { padding: 9px 0; border-top: 1px solid var(--line); }
+  .sm-grid > .sm-h { border-top: none; padding-top: 0; font-family: var(--font-display); font-weight: 600; font-size: 14.5px; }
+  .sm-k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .sm-v { font-size: 13px; line-height: 1.35; }
+  .sm-big { font-family: var(--font-mono); font-weight: 600; font-size: 15px; }
+  .sm-big.good { color: var(--accent); }
+  .sm-big.bad { color: var(--stitch); }
+  .sm-unit { font-size: 11.5px; color: var(--muted); }
+  .sm-sub { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .sm-muted { color: var(--muted); }
+  .sm-ok { color: var(--accent); font-weight: 600; }
+  .sm-pen { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .sm-pen .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .sm-pen.bp-fresh .dot { background: var(--accent); }
+  .sm-pen.bp-moderate .dot { background: var(--muted); }
+  .sm-pen.bp-taxed .dot, .sm-pen.bp-exhausted .dot { background: var(--stitch); }
+  .sm-pen.bp-taxed, .sm-pen.bp-exhausted { color: var(--stitch); }
+  .sm-park { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 0; font-size: 13px; }
+  .sm-park .sm-k { margin-right: 6px; }
+  @media (max-width: 420px) {
+    .summary-card { padding: 12px 12px; }
+    .sm-grid { grid-template-columns: 64px 1fr 1fr; column-gap: 8px; }
+    .sm-k { font-size: 10px; }
+    .sm-v { font-size: 12px; }
+    .sm-big { font-size: 14px; }
+    .sm-grid > .sm-h { font-size: 13px; }
+  }
+
+  /* ---- Player / team pages ---- */
+  .pg { display: flex; flex-direction: column; gap: 14px; }
+  .pg-head { padding: 20px 18px; }
+  .pg-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .pg-title { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin-bottom: 8px; }
+  .pg-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  .pg-scroll { border: none; border-radius: 0; }
+  table.pg-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.pg-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; text-align: right; padding: 0 0 6px 7px; white-space: nowrap; }
+  table.pg-table td { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; padding: 6px 0 6px 7px; border-top: 1px solid var(--line); white-space: nowrap; }
+  @media (max-width: 420px) {
+    .pg-card { padding: 12px 12px; }
+    table.pg-table { font-size: 12px; }
+    table.pg-table th, table.pg-table td { padding-left: 6px; }
+  }
+  table.pg-table th:first-child, table.pg-table td:first-child { text-align: left; padding-left: 0; font-family: var(--font-body); }
+  table.pg-table td:first-child { color: var(--muted); font-size: 12px; }
+  table.pg-table tr.pg-lg td { color: var(--muted); font-size: 11.5px; }
+  .pg-post { font-family: var(--font-mono); font-size: 9px; color: var(--accent); border: 1px solid currentColor; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+  .pg-today { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; background: var(--accent-soft); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; color: var(--ink); font-size: 14px; }
+  .pg-today-k { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 600; }
+  .pg-today-d { flex-basis: 100%; font-size: 12.5px; color: var(--muted); }
+  .pg-today-go { font-size: 12.5px; color: var(--accent); font-weight: 600; text-decoration: none; }
+  .pg-park { font-size: 13.5px; }
+  .pg-sub { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 6px; }
+  .pg-roster { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .pg-roster ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+  .pg-roster li { display: flex; gap: 6px; align-items: baseline; }
 
   @media (max-width: 420px) {
     h1 { font-size: 26px; }
@@ -406,9 +469,37 @@
       .then(function (r) { if (!r.ok) throw new Error("lineup request failed"); return r.json(); });
   }
 
+  // One request per URL per page view (the game summary and the starter
+  // cards both want the same pitcher overview).
+  var jsonCache = {};
+  var JSON_CACHE_MS = 10 * 60 * 1000;   // same cadence as the server's pre-game refresh
+  function fetchJSON(url) {
+    var hit = jsonCache[url];
+    if (!hit || Date.now() - hit.t > JSON_CACHE_MS) {
+      hit = jsonCache[url] = { t: Date.now(), p: fetch(url).then(function (r) {
+        if (!r.ok) throw new Error("request failed: " + url);
+        return r.json();
+      }).catch(function (err) { delete jsonCache[url]; throw err; }) };
+    }
+    return hit.p;
+  }
+
   function fetchPitcherOverview(pitcherId, date) {
-    return fetch("/api/pitcher?id=" + pitcherId + "&date=" + encodeURIComponent(date))
-      .then(function (r) { if (!r.ok) throw new Error("pitcher request failed"); return r.json(); });
+    return fetchJSON("/api/pitcher?id=" + pitcherId + "&date=" + encodeURIComponent(date));
+  }
+
+  // ---- Links to player / team pages ----
+  function playerHref(id) { return "#/player/" + id + "/" + currentDate; }
+  function teamHref(id) { return "#/team/" + id + "/" + currentDate; }
+  function playerLink(id, name) {
+    return id ? '<a class="plink" href="' + playerHref(id) + '">' + escapeHtml(name || "") + '</a>' : escapeHtml(name || "");
+  }
+  function teamLink(id, name) {
+    return id ? '<a class="plink" href="' + teamHref(id) + '">' + escapeHtml(name || "") + '</a>' : escapeHtml(name || "");
+  }
+  function ordinal(n) {
+    var s = ["th", "st", "nd", "rd"], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
   function fetchEstimates(pitcherId, opponentTeamId, date, gamePk, isReliever) {
@@ -554,6 +645,11 @@
     if (parts[0] === "game" && parts[1] && parts[2]) {
       currentDate = parts[1];
       renderGameRoute(parts[1], parseInt(parts[2], 10), parts[3] ? parseInt(parts[3], 10) : null);
+    } else if ((parts[0] === "player" || parts[0] === "team") && parts[1]) {
+      if (parts[2]) currentDate = parts[2];
+      window.scrollTo(0, 0);
+      if (parts[0] === "player") renderPlayerPage(parseInt(parts[1], 10));
+      else renderTeamPage(parseInt(parts[1], 10));
     } else {
       renderHome();
     }
@@ -684,14 +780,17 @@
     app.appendChild(el(
       '<div class="matchup-card">' +
         '<h1 class="matchup-teams">' +
-          '<span class="matchup-team-name">' + escapeHtml(game.away_team) + '</span>' +
+          '<span class="matchup-team-name">' + teamLink(game.away_team_id, game.away_team) + '</span>' +
           '<span class="matchup-at">@</span>' +
-          '<span class="matchup-team-name">' + escapeHtml(game.home_team) + '</span>' +
+          '<span class="matchup-team-name">' + teamLink(game.home_team_id, game.home_team) + '</span>' +
         '</h1>' +
         (gameTime ? '<div class="matchup-time">' + gameTime + '</div>' : "") +
         '<div class="matchup-sub">' + pitchersLineText(game) + ' &middot; ' + escapeHtml(game.venue_name || "Venue TBD") + '</div>' +
       '</div>'
     ));
+
+    app.appendChild(el('<div class="section-label">Game Summary</div>'));
+    app.appendChild(renderGameSummary(game));
 
     app.appendChild(el('<div class="section-label">Starting Pitchers</div>'));
     app.appendChild(renderStarterCards(game));
@@ -709,6 +808,262 @@
     app.appendChild(renderBullpenSection(game));
 
     app.appendChild(el('<p class="tabs-note">More planned here — lineup confirmations and market data.</p>'));
+  }
+
+  // ---- Game summary (top of the game page) ----
+  // One glance at the matchup: each lineup's season hitting vs the hand
+  // it's facing today (with its MLB rank), both starters' last 5 starts,
+  // both bullpens, whether lineups are posted, and park + weather. All
+  // facts, no projections.
+  function renderGameSummary(game) {
+    var card = el('<div class="summary-card"><div class="loading">Loading summary&hellip;</div></div>');
+    var sides = [
+      { key: "away", teamId: game.away_team_id, team: game.away_team, lineup: game.away_lineup,
+        fatigue: game.away_bullpen_fatigue, spId: game.away_probable_pitcher_id, spName: game.away_probable_pitcher },
+      { key: "home", teamId: game.home_team_id, team: game.home_team, lineup: game.home_lineup,
+        fatigue: game.home_bullpen_fatigue, spId: game.home_probable_pitcher_id, spName: game.home_probable_pitcher }
+    ];
+    var spPromises = sides.map(function (sd) {
+      return sd.spId ? fetchPitcherOverview(sd.spId, game.game_date).catch(function () { return null; }) : Promise.resolve(null);
+    });
+    var sumPromise = fetchJSON("/api/summary?game=" + game.game_pk + "&date=" + encodeURIComponent(game.game_date))
+      .catch(function () { return null; });
+
+    Promise.all([sumPromise].concat(spPromises)).then(function (res) {
+      var sum = res[0], sps = [res[1], res[2]];
+      function hitCell(sd) {
+        var s = sum && sum.sides ? sum.sides[sd.key] : null;
+        if (!s || !s.line) return '<span class="sm-muted">–</span>';
+        var hand = s.vs === "L" ? "LHP" : "RHP";
+        var lg = s.league ? s.league.ops : null;
+        var tone = lg && s.line.ops_num >= (s.league.ops_num + 0.02) ? "good" : lg && s.line.ops_num <= (s.league.ops_num - 0.02) ? "bad" : "";
+        return '<span class="sm-big ' + tone + '">' + s.line.ops + '</span> <span class="sm-unit">OPS vs ' + hand + '</span>' +
+          '<span class="sm-sub">' + (s.rank ? ordinal(s.rank) + " of " + sum.teams + " &middot; " : "") +
+          s.line.avg + '/' + s.line.obp + '/' + s.line.slg + '</span>';
+      }
+      function spCell(sd, p) {
+        if (!sd.spId) return '<span class="sm-muted">Not announced</span>';
+        var hand = p && p.throws ? (p.throws === "L" ? " (LHP)" : " (RHP)") : "";
+        var last = p && p.last_starts;
+        return playerLink(sd.spId, sd.spName) + '<span class="sm-unit">' + hand + '</span>' +
+          '<span class="sm-sub">' + (last ? "Last " + last.starts_counted + ": " + last.era + " ERA &middot; " + last.whip + " WHIP"
+            : p && p.season ? "Season: " + p.season.era + " ERA" : "") + '</span>';
+      }
+      function penCell(sd) {
+        var f = sd.fatigue;
+        if (!f) return '<span class="sm-muted">–</span>';
+        return '<span class="sm-pen ' + fatigueClass(f.label) + '"><span class="dot"></span>' + escapeHtml(f.label) + '</span>' +
+          '<span class="sm-sub">' + f.weekly_pitches + ' pitches, last 7 days</span>';
+      }
+      function lineupCell(sd) {
+        return sd.lineup && sd.lineup.length ? '<span class="sm-ok">Posted</span>' : '<span class="sm-muted">Not yet</span>';
+      }
+      var hitLabel = "Hitting vs today’s starter";
+      var rows = [
+        [hitLabel, hitCell(sides[0]), hitCell(sides[1])],
+        ["Starter", spCell(sides[0], sps[0]), spCell(sides[1], sps[1])],
+        ["Bullpen", penCell(sides[0]), penCell(sides[1])],
+        ["Lineup", lineupCell(sides[0]), lineupCell(sides[1])]
+      ];
+      var html = '<div class="sm-grid">' +
+        '<div class="sm-h"></div><div class="sm-h">' + teamLink(sides[0].teamId, sides[0].team) + '</div>' +
+        '<div class="sm-h">' + teamLink(sides[1].teamId, sides[1].team) + '</div>' +
+        rows.map(function (r) {
+          return '<div class="sm-k">' + r[0] + '</div><div class="sm-v">' + r[1] + '</div><div class="sm-v">' + r[2] + '</div>';
+        }).join("") + '</div>';
+
+      // Park + weather, one line.
+      var bits = [];
+      if (game.venue_hr_factor !== null && game.venue_hr_factor !== undefined) bits.push("HR factor " + game.venue_hr_factor);
+      if (game.venue_roof_type && /dome|indoor/i.test(game.venue_roof_type)) bits.push("Roof closed / dome");
+      if (game.temp_f !== null && game.temp_f !== undefined) bits.push(Math.round(game.temp_f) + "°");
+      var hasWind = game.wind_speed_mph !== null && game.wind_speed_mph !== undefined &&
+        game.wind_dir_deg !== null && game.venue_azimuth_angle !== null && game.venue_azimuth_angle !== undefined;
+      if (hasWind) {
+        var tone = windTone(relativeWindDeg(game));
+        bits.push(game.wind_speed_mph < 4 ? "Calm" :
+          "Wind " + game.wind_speed_mph + " mph " + (tone === "out" ? "blowing out" : tone === "in" ? "blowing in" : "across"));
+      }
+      html += '<div class="sm-park"><span class="sm-k">Park &amp; weather</span> ' +
+        escapeHtml(game.venue_name || "") + (bits.length ? ' &middot; ' + bits.join(" &middot; ") : "") + '</div>';
+      card.innerHTML = html;
+    });
+    return card;
+  }
+
+  // ---- Player and team pages ----
+  function pageBack() {
+    var b = el('<button type="button" class="back-link">&larr; Back</button>');
+    b.addEventListener("click", function () {
+      if (history.length > 1) history.back(); else location.hash = "#/";
+    });
+    return b;
+  }
+
+  // A small stat table. cols: [[header, key or fn(row)]]; first column is the row label.
+  function statTable(cols, rows) {
+    var head = '<tr>' + cols.map(function (c) { return '<th>' + c[0] + '</th>'; }).join("") + '</tr>';
+    var body = rows.map(function (r) {
+      return '<tr' + (r._cls ? ' class="' + r._cls + '"' : "") + '>' + cols.map(function (c) {
+        var v = typeof c[1] === "function" ? c[1](r) : r[c[1]];
+        return '<td>' + (v === null || v === undefined || v === "" ? "–" : v) + '</td>';
+      }).join("") + '</tr>';
+    }).join("");
+    return '<div class="table-scroll pg-scroll"><table class="pg-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+  }
+
+  function pgCard(title, inner, note) {
+    return '<div class="pg-card"><div class="pg-title">' + title + '</div>' + inner +
+      (note ? '<div class="pg-note">' + note + '</div>' : "") + '</div>';
+  }
+
+  function shortDay(iso) {
+    var d = new Date(iso + "T12:00:00");
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  function hitRow(label, line, extra) {
+    var r = { label: label };
+    if (line) Object.keys(line).forEach(function (k) { r[k] = line[k]; });
+    if (extra) Object.keys(extra).forEach(function (k) { r[k] = extra[k]; });
+    return r;
+  }
+
+  function renderPlayerPage(pid) {
+    app.innerHTML = "";
+    app.appendChild(pageBack());
+    var host = el('<div class="pg"><div class="loading">Loading player&hellip;</div></div>');
+    app.appendChild(host);
+    fetchJSON("/api/player?id=" + pid + "&date=" + encodeURIComponent(currentDate)).then(function (p) {
+      var bio = [];
+      if (p.number) bio.push("#" + escapeHtml(p.number));
+      if (p.position) bio.push(escapeHtml(p.position));
+      bio.push("Bats " + (p.bats || "–") + " / Throws " + (p.throws || "–"));
+      if (p.age) bio.push("Age " + p.age);
+      var html = '<div class="matchup-card pg-head"><h1 class="matchup-team-name">' + escapeHtml(p.name) + '</h1>' +
+        '<div class="matchup-sub">' + bio.join(" &middot; ") + '</div>' +
+        (p.team && p.team.id ? '<div class="matchup-sub">' + teamLink(p.team.id, p.team.name) + '</div>' : "") + '</div>';
+
+      var t = p.today;
+      if (t) {
+        var gameHref = "#/game/" + t.date + "/" + t.game_pk + (p.kind === "hitter" && t.opp_starter && t.opp_starter.id ? "/" + t.opp_starter.id : "");
+        var line = (t.is_home ? "vs " : "@ ") + escapeHtml(t.opponent);
+        var detail = "";
+        if (p.kind === "hitter") {
+          if (t.opp_starter && t.opp_starter.id) {
+            var hand = t.opp_starter.throws === "L" ? "LHP" : t.opp_starter.throws === "R" ? "RHP" : "";
+            detail = 'Facing ' + playerLink(t.opp_starter.id, t.opp_starter.name) + (hand ? ' (' + hand + ')' : "");
+            var h = t.h2h;
+            detail += h ? ' &middot; ' + h.h + '-for-' + h.ab + (h.hr ? ', ' + h.hr + ' HR' : "") + ' career vs him' +
+              (h.ops ? ' (' + h.ops + ' OPS)' : "") : ' &middot; never faced him';
+          } else {
+            detail = "Opposing starter not announced yet";
+          }
+        } else {
+          var own = t.own_starter && t.own_starter.id === p.id;
+          detail = own ? "Probable starter today" : (t.own_starter && t.own_starter.name ? "Not starting (" + escapeHtml(t.own_starter.name) + " is)" : "");
+        }
+        html += '<div class="pg-today"><span class="pg-today-k">Today</span> ' + line +
+          (detail ? '<span class="pg-today-d">' + detail + '</span>' : "") +
+          '<a class="pg-today-go" href="' + gameHref + '">Game page &rarr;</a></div>';
+      }
+
+      if (p.kind === "hitter") {
+        var hitCols = [["", "label"], ["PA", "pa"], ["AVG", "avg"], ["OBP", "obp"], ["SLG", "slg"], ["OPS", "ops"],
+          ["HR", "hr"], ["K%", "k_pct"]];
+        html += pgCard("Last 3 seasons", statTable(hitCols,
+          (p.seasons || []).map(function (s) { return hitRow(s.season + (s.teams.length > 1 ? "*" : ""), s.line); })),
+          (p.seasons || []).some(function (s) { return s.teams.length > 1; }) ? "* Played for more than one team." : "Regular season.");
+        html += pgCard(p.season + " vs LHP / RHP", statTable(hitCols,
+          [hitRow("vs LHP", p.vs_hand.L), hitRow("vs RHP", p.vs_hand.R)]), "Regular season.");
+        if (p.recent && p.recent.length) {
+          html += pgCard("Recent form", statTable(hitCols, p.recent.map(function (r) {
+            return hitRow("Last " + r.games, r.line);
+          })), "His last 7 / 15 / 30 games, including the postseason (" + shortDay(p.recent[p.recent.length - 1].from) +
+            " – " + shortDay(p.recent[0].to) + ").");
+        }
+        if (p.game_log && p.game_log.length) {
+          html += pgCard("Game log", statTable([["", function (g) { return shortDay(g.date) + (g.postseason ? '<span class="pg-post">P</span>' : ""); }],
+            ["Opp", function (g) { return (g.is_home ? "vs " : "@ ") + escapeHtml(abbrevTeam(g.opponent)); }],
+            ["AB", "ab"], ["H", "h"], ["2B", "d2"], ["3B", "d3"], ["HR", "hr"], ["RBI", "rbi"], ["BB", "bb"], ["K", "so"]],
+            p.game_log), "Last 10 games. P = postseason.");
+        }
+      } else {
+        html += pgCard("Last 3 seasons", statTable([["", "label"], ["GS", "gs"], ["IP", "ip"], ["ERA", "era"], ["WHIP", "whip"],
+          ["K/9", "k9"], ["BB/9", "bb9"], ["HR/9", "hr9"]],
+          (p.seasons || []).map(function (s) { return hitRow(s.season + (s.teams.length > 1 ? "*" : ""), s.line); })),
+          "Regular season.");
+        html += pgCard(p.season + " vs LHH / RHH", statTable([["", "label"], ["BF", "bf"], ["AVG", "avg"], ["OBP", "obp"],
+          ["SLG", "slg"], ["OPS", "ops"], ["K%", "k_pct"], ["BB%", "bb_pct"]],
+          [hitRow("vs LHH", p.vs_hand.L), hitRow("vs RHH", p.vs_hand.R)]), "What hitters have done against him, regular season.");
+        if (p.recent && p.recent.length) {
+          html += pgCard(p.role === "starter" ? "Last " + p.recent.length + " starts" : "Last " + p.recent.length + " outings",
+            statTable([["", function (g) { return shortDay(g.date) + (g.postseason ? '<span class="pg-post">P</span>' : ""); }],
+              ["Opp", function (g) { return (g.is_home ? "vs " : "@ ") + escapeHtml(abbrevTeam(g.opponent)); }],
+              ["IP", "ip"], ["H", "h"], ["ER", "er"], ["BB", "bb"], ["K", "so"], ["Pit", "pitches"]], p.recent),
+            "Including the postseason. P = postseason.");
+        }
+      }
+      host.innerHTML = html;
+    }).catch(function () {
+      host.innerHTML = '<div class="empty-day">Couldn’t load this player right now. Try reloading the page.</div>';
+    });
+  }
+
+  // "Los Angeles Dodgers" -> "Dodgers" (keeps game-log tables narrow on a phone).
+  function abbrevTeam(name) {
+    if (!name) return "";
+    var two = { "Red Sox": 1, "White Sox": 1, "Blue Jays": 1 };
+    var parts = name.split(" ");
+    var last2 = parts.slice(-2).join(" ");
+    return two[last2] ? last2 : parts[parts.length - 1];
+  }
+
+  function renderTeamPage(tid) {
+    app.innerHTML = "";
+    app.appendChild(pageBack());
+    var host = el('<div class="pg"><div class="loading">Loading team&hellip;</div></div>');
+    app.appendChild(host);
+    fetchJSON("/api/team?id=" + tid + "&date=" + encodeURIComponent(currentDate)).then(function (t) {
+      var html = '<div class="matchup-card pg-head"><h1 class="matchup-team-name">' + escapeHtml(t.name || "") + '</h1></div>';
+      if (t.today) {
+        var g = t.today;
+        html += '<div class="pg-today"><span class="pg-today-k">Today</span> ' +
+          (g.is_home ? "vs " : "@ ") + escapeHtml(g.opponent) +
+          '<span class="pg-today-d">' + (g.own_starter && g.own_starter.id ? playerLink(g.own_starter.id, g.own_starter.name) : "TBA") + ' vs ' +
+          (g.opp_starter && g.opp_starter.id ? playerLink(g.opp_starter.id, g.opp_starter.name) : "TBA") + '</span>' +
+          '<a class="pg-today-go" href="#/game/' + g.date + '/' + g.game_pk + '">Game page &rarr;</a></div>';
+      }
+      var h = t.hitting || {};
+      var n = h.teams || 30;
+      function rk(r) { return r ? ordinal(r) : "–"; }
+      var cols = [["", "label"], ["AVG", "avg"], ["OBP", "obp"], ["SLG", "slg"], ["OPS", "ops"],
+        ["HR", "hr"], ["K%", "k_pct"], ["Rank", "rank"]];
+      var rows = [hitRow("Season", h.season, { rank: "" }), hitRow("vs LHP", h.L, { rank: rk(h.L_rank) }),
+        hitRow("vs RHP", h.R, { rank: rk(h.R_rank) })];
+      if (h.league) {
+        rows.push(hitRow("MLB vs LHP", h.league.L, { _cls: "pg-lg", rank: "", hr: "" }));
+        rows.push(hitRow("MLB vs RHP", h.league.R, { _cls: "pg-lg", rank: "", hr: "" }));
+      }
+      html += pgCard(t.season + " hitting", statTable(cols, rows), "Regular season. Rank = by OPS, of all " + n + " teams; MLB rows are the league average.");
+      if (t.park) {
+        html += pgCard("Home park", '<div class="pg-park"><strong>' + escapeHtml(t.park.name) + '</strong>' +
+          (t.park.hr_factor !== null && t.park.hr_factor !== undefined ? ' &middot; HR factor ' + t.park.hr_factor : "") +
+          (t.park.hit_factor !== null && t.park.hit_factor !== undefined ? ' &middot; Hit factor ' + t.park.hit_factor : "") +
+          (t.park.roof_type ? ' &middot; ' + escapeHtml(t.park.roof_type) : "") + '</div>', "Park factors: 100 = league average.");
+      }
+      html += '<div class="section-label">Bullpen</div><div class="pg-bullpen"></div>';
+      var hitters = (t.hitters || []).map(function (x) {
+        return '<li><span class="lineup-pos">' + escapeHtml(x.position || "") + '</span>' + playerLink(x.id, x.name) + '</li>';
+      }).join("");
+      var arms = (t.pitchers || []).map(function (x) { return '<li>' + playerLink(x.id, x.name) + '</li>'; }).join("");
+      html += pgCard("Active roster", '<div class="pg-roster"><div><div class="pg-sub">Hitters</div><ul>' + hitters +
+        '</ul></div><div><div class="pg-sub">Pitchers</div><ul>' + arms + '</ul></div></div>');
+      host.innerHTML = html;
+      host.querySelector(".pg-bullpen").appendChild(renderBullpenSection({ away_team_id: t.id, away_team: t.name }));
+    }).catch(function () {
+      host.innerHTML = '<div class="empty-day">Couldn’t load this team right now. Try reloading the page.</div>';
+    });
   }
 
   // ---- Starting pitchers overview ----
@@ -746,7 +1101,7 @@
           '<div class="sp-tba">Starter not announced yet.</div>';
         return;
       }
-      card.innerHTML = '<div class="sp-head"><span class="sp-name">' + escapeHtml(sp.name) + '</span></div>' +
+      card.innerHTML = '<div class="sp-head"><span class="sp-name">' + playerLink(sp.id, sp.name) + '</span></div>' +
         '<div class="sp-team">' + escapeHtml(sp.team) + '</div>' +
         '<div class="loading">Loading stats&hellip;</div>';
       fetchPitcherOverview(sp.id, game.game_date).then(function (p) {
@@ -758,40 +1113,13 @@
     return grid;
   }
 
-  function shortDate(iso) {
-    var d = new Date(iso + "T12:00:00");
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
-
-  // Pitch mix vs each side (Statcast, regular season) -- the same numbers
-  // that feed the pitch-mix part of the hitter estimates below.
-  function arsenalHtml(a) {
-    if (!a) return "";
-    function line(side, label) {
-      var list = a[side] || [];
-      if (!list.length) return "";
-      return '<div><strong>' + label + ':</strong> ' + list.map(function (x) {
-        return escapeHtml(x.name) + ' ' + x.pct + '%';
-      }).join(" &middot; ") + '</div>';
-    }
-    return '<div class="sp-arsenal">' + line("L", "vs LHH") + line("R", "vs RHH") + '</div>';
-  }
-
   function starterCardHtml(p, sp) {
     function v(line, key) { return line && line[key] ? line[key] : "–"; }
     var hand = p.throws === "L" ? "LHP" : p.throws === "R" ? "RHP" : "";
     var last = p.last_starts;
     var lastLabel = last ? "Last " + last.starts_counted + " start" + (last.starts_counted === 1 ? "" : "s") : "Last 5 starts";
 
-    var foot = [];
-    if (p.career && p.career.era) foot.push("Career ERA " + p.career.era);
-    if (last && last.from_date) {
-      foot.push("Last " + (last.starts_counted === 1 ? "start " + shortDate(last.to_date)
-        : last.starts_counted + ": " + shortDate(last.from_date) + " – " + shortDate(last.to_date)) +
-        (last.postseason_starts ? ", incl. " + last.postseason_starts + " postseason" : ""));
-    }
-
-    return '<div class="sp-head"><span class="sp-name">' + escapeHtml(p.name || sp.name) + '</span>' +
+    return '<div class="sp-head"><span class="sp-name">' + playerLink(sp.id, p.name || sp.name) + '</span>' +
         (hand ? '<span class="sp-hand">' + hand + '</span>' : "") + '</div>' +
       '<div class="sp-team">' + escapeHtml(sp.team) + '</div>' +
       '<table class="sp-stats"><thead><tr><th></th>' +
@@ -805,9 +1133,7 @@
         '<tr><td>' + lastLabel + '</td><td>' + v(last, "era") + '</td><td>' +
           v(last, "whip") + '</td><td>' + v(last, "k9") + '</td><td>' +
           (last ? last.ip_per_start + '<span style="color:var(--muted)">/start</span>' : "–") + '</td></tr>' +
-      '</tbody></table>' +
-      (foot.length ? '<div class="sp-foot">' + foot.join(" &middot; ") + '</div>' : "") +
-      arsenalHtml(p.arsenal);
+      '</tbody></table>';
   }
 
   function fatigueSummaryText(fatigue) {
@@ -843,7 +1169,7 @@
     var items = lineup.map(function (p) {
       return '<li><span class="lineup-order">' + p.order + '</span>' +
         '<span class="lineup-pos">' + escapeHtml(p.position || "") + '</span>' +
-        '<span class="lineup-name">' + escapeHtml(p.name || "") + '</span></li>';
+        '<span class="lineup-name">' + playerLink(p.id, p.name) + '</span></li>';
     }).join("");
     return '<div class="lineup-card"><div class="bullpen-team-name">' + escapeHtml(teamName) + '</div>' +
       spLine +
@@ -901,7 +1227,7 @@
           return;
         }
         var rows = data.relievers.map(function (p) {
-          return '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p.appearances + '</td><td>' + p.pitches + '</td><td>' + escapeHtml(p.last_appearance || "–") + '</td></tr>';
+          return '<tr><td>' + playerLink(p.id, p.name) + '</td><td>' + p.appearances + '</td><td>' + p.pitches + '</td><td>' + escapeHtml(p.last_appearance || "–") + '</td></tr>';
         }).join("");
         body.innerHTML =
           '<table><thead><tr><th>Pitcher</th><th>Apps</th><th>Pitches</th><th>Last outing</th></tr></thead><tbody>' + rows + '</tbody></table>';
@@ -1052,11 +1378,14 @@
           : c[1] === "woba" ? "woba-cell" : "";
         return '<td class="' + cls + '">' + cellValue(b.stats, c[1]) + '</td>';
       }).join("");
-      tr.innerHTML = '<td>' + escapeHtml(b.name) + '</td>' + cells;
+      tr.innerHTML = '<td>' + playerLink(b.id, b.name) + '</td>' + cells;
       if (b.seasons && b.seasons.length) {
         tr.style.cursor = "pointer";
         tr.title = "Tap for season-by-season";
-        tr.addEventListener("click", function () { toggleSeasons(tr, b); });
+        tr.addEventListener("click", function (e) {
+          if (e.target.closest("a")) return;   // the name opens his player page instead
+          toggleSeasons(tr, b);
+        });
       }
       tbody.appendChild(tr);
     });
@@ -1122,26 +1451,27 @@
 
     var lgOps = est.league.ops_num;
     // Two header rows: a group label over each half, then short column
-    // names -- short enough that all five projections fit on a phone screen
+    // names -- short enough that all six projections fit on a phone screen
     // without scrolling the table sideways.
     var head = '<thead><tr class="grp-row"><th></th>' +
-      '<th colspan="5" class="est-col grp">Projected</th>' +
+      '<th colspan="6" class="est-col grp">Projected</th>' +
       '<th colspan="6" class="first-real grp">2026 vs ' + handShort + ' (actual)</th></tr>' +
       '<tr><th>Batter</th>' +
       '<th class="est-col">AVG</th><th class="est-col">OBP</th><th class="est-col">SLG</th>' +
-      '<th class="est-col">OPS</th><th class="est-col">1+ HR</th>' +
+      '<th class="est-col">OPS</th><th class="est-col">1+ H</th><th class="est-col">1+ HR</th>' +
       '<th class="first-real">PA</th><th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th><th>HR</th></tr></thead>';
     var body = rows.map(function (r) {
       var v = r.vs_hand, e = r.est;
       var order = orderById[r.id];
       var cls = e.ops_num >= lgOps + 0.06 ? "hot" : e.ops_num <= lgOps - 0.06 ? "cold" : "";
       return '<tr class="' + (hasLineup && !order ? "bench-row" : "") + '"><td>' +
-          (order ? '<span class="order-num">' + order + '</span>' : "") + escapeHtml(r.name) +
+          (order ? '<span class="order-num">' + order + '</span>' : "") + playerLink(r.id, r.name) +
           (r.bats ? '<span class="bat-side">' + r.bats + '</span>' : "") +
           (r.h2h && r.h2h.ab ? '<span class="h2h-line">' + r.h2h.h + '-for-' + r.h2h.ab +
             (r.h2h.hr ? ', ' + r.h2h.hr + ' HR' : '') + ' vs him</span>' : "") + '</td>' +
         '<td class="est-col">' + e.avg + '</td><td class="est-col">' + e.obp + '</td><td class="est-col">' + e.slg +
-          '</td><td class="est-col ops-cell ' + cls + '">' + e.ops + '</td><td class="est-col">' + e.hr_tonight + '</td>' +
+          '</td><td class="est-col ops-cell ' + cls + '">' + e.ops + '</td><td class="est-col">' + (e.hit_tonight || "–") +
+          '</td><td class="est-col">' + e.hr_tonight + '</td>' +
         '<td class="first-real">' + (v.pa || 0) + '</td><td>' + (v.avg || "–") + '</td><td>' + (v.obp || "–") + '</td><td>' +
           (v.slg || "–") + '</td><td>' + (v.ops || "–") + '</td><td>' + (v.hr === null || v.hr === undefined ? "–" : v.hr) + '</td></tr>';
     }).join("");
@@ -1150,7 +1480,7 @@
     wrap.appendChild(scroll);
     wrap.appendChild(el('<div class="est-note">' +
       (hasLineup ? "Today’s batting order first, then the bench. " : "Sorted by projected OPS (lineup not posted yet). ") +
-      '1+ HR = chance of at least one home run in the game.</div>'));
+      '1+ H / 1+ HR = chance of at least one hit / home run in the game.</div>'));
     return wrap;
   }
 

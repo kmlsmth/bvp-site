@@ -20,7 +20,7 @@ from __future__ import annotations
 import sys
 import time
 import traceback
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
@@ -50,7 +50,7 @@ def baseball_today() -> str:
     return datetime.now(BASEBALL_TZ).date().isoformat()
 
 
-def ingest_date(target_date: str, force: bool = False) -> int:
+def ingest_date(target_date: str, force: bool = False, backfill_appearances: bool = True) -> int:
     """Ingest one date's games. Returns the number of games processed.
 
     Safe to call repeatedly: if this date was already fully ingested, it
@@ -98,7 +98,9 @@ def ingest_date(target_date: str, force: bool = False) -> int:
             # fatigue and starter recent-form. Idempotent (skips games
             # already backfilled), so safe to call for every game today
             # even though most days this is a no-op after the first run.
-            for team_id in (game["home_team_id"], game["away_team_id"]):
+            # (Skipped for future dates -- see refresh_upcoming: today's
+            # pass already keeps every team's recent games current.)
+            for team_id in ((game["home_team_id"], game["away_team_id"]) if backfill_appearances else ()):
                 n = ingest_appearances.backfill_team_appearances(conn, team_id, target_date)
                 if n:
                     print(f"    appearances: team {team_id}, {n} new game(s) backfilled")
@@ -128,7 +130,7 @@ def ingest_date(target_date: str, force: bool = False) -> int:
         conn.close()
 
 
-def refresh_probable_pitchers(target_date: str) -> int:
+def refresh_probable_pitchers(target_date: str, backfill_appearances: bool = True) -> int:
     """Lightweight check that runs every hour REGARDLESS of whether
     target_date's full ingestion has already happened for the day.
 
@@ -176,8 +178,9 @@ def refresh_probable_pitchers(target_date: str) -> int:
             # backfill_team_appearances is cheap and idempotent (it skips
             # any game already stored), so doing this every hour for every
             # team playing today is a self-healing retry, not wasted work.
-            ingest_appearances.backfill_team_appearances(conn, game["home_team_id"], target_date)
-            ingest_appearances.backfill_team_appearances(conn, game["away_team_id"], target_date)
+            if backfill_appearances:
+                ingest_appearances.backfill_team_appearances(conn, game["home_team_id"], target_date)
+                ingest_appearances.backfill_team_appearances(conn, game["away_team_id"], target_date)
 
             if status in ingest_appearances._COMPLETED_STATUSES:
                 continue  # nothing left to announce for a finished game
@@ -270,14 +273,15 @@ def is_pregame(game: dict, now_utc) -> bool:
     return -_STARTED_GRACE_MINUTES <= minutes_until <= PREGAME_WINDOW_HOURS * 60
 
 
-def weather_is_stale(conn, game_pk: int, now_utc) -> bool:
+def weather_is_stale(conn, game_pk: int, now_utc, max_age_minutes: float | None = None) -> bool:
     row = conn.execute("SELECT fetched_at FROM game_weather WHERE game_pk = ?",
                        (game_pk,)).fetchone()
     if row is None or not row[0]:
         return True
     # SQLite datetime('now') is UTC, stored as "YYYY-MM-DD HH:MM:SS".
     fetched = datetime.fromisoformat(row[0].replace(" ", "T") + "+00:00")
-    return (now_utc - fetched).total_seconds() / 60 >= WEATHER_MAX_AGE_MINUTES
+    limit = WEATHER_MAX_AGE_MINUTES if max_age_minutes is None else max_age_minutes
+    return (now_utc - fetched).total_seconds() / 60 >= limit
 
 
 def pregame_refresh(target_date: str, now_utc=None) -> dict:
@@ -362,3 +366,50 @@ if __name__ == "__main__":
     force = "--force" in sys.argv[1:]
     target = args[0] if args else baseball_today()
     ingest_date(target, force=force)
+
+
+# --- Upcoming days -------------------------------------------------------
+# Kamil: upcoming games (and their data) should be on the site as soon as
+# MLB has them, not only same-day -- the point is to prepare in advance.
+# So the hourly pass also pulls the next UPCOMING_DAYS dates: each date's
+# full ingestion once (games, probable starters' matchup history), then
+# every hour the cheap probable-pitcher check (a starter announced
+# tomorrow gets his history pulled right away), and a weather forecast
+# refreshed every UPCOMING_WEATHER_MAX_AGE_MINUTES (the pre-game pass takes
+# over within 3 hours of first pitch, as before).
+UPCOMING_DAYS = 3
+UPCOMING_WEATHER_MAX_AGE_MINUTES = 6 * 60
+
+
+def refresh_upcoming(today: str, now_utc=None) -> list[dict]:
+    now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
+    out = []
+    d0 = date.fromisoformat(today)
+    for i in range(1, UPCOMING_DAYS + 1):
+        d = (d0 + timedelta(days=i)).isoformat()
+        counts = {"date": d, "ingested": 0, "new_pitchers": 0, "weather_refreshed": 0}
+        try:
+            counts["ingested"] = ingest_date(d, backfill_appearances=False)
+        except Exception:
+            print(f"[upcoming] ingestion for {d} failed:")
+            traceback.print_exc()
+        counts["new_pitchers"] = refresh_probable_pitchers(d, backfill_appearances=False)
+        conn = db.connect()
+        try:
+            rows = conn.execute("SELECT game_pk, game_date_time, venue_id FROM games WHERE game_date = ?",
+                                (d,)).fetchall()
+            for game_pk, game_date_time, venue_id in rows:
+                if weather_is_stale(conn, game_pk, now_utc, UPCOMING_WEATHER_MAX_AGE_MINUTES):
+                    venues_mod.refresh_weather(conn, {"game_pk": game_pk, "game_date_time": game_date_time,
+                                                      "venue_id": venue_id})
+                    conn.commit()
+                    counts["weather_refreshed"] += 1
+        except Exception:
+            print(f"[upcoming] weather for {d} failed:")
+            traceback.print_exc()
+        finally:
+            conn.close()
+        if counts["ingested"] or counts["new_pitchers"] or counts["weather_refreshed"]:
+            print(f"[upcoming] {counts}")
+        out.append(counts)
+    return out

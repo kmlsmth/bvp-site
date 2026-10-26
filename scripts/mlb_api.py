@@ -169,7 +169,7 @@ def get_boxscore(game_pk: int) -> dict:
     return resp.json()
 
 
-# ---- Player / team pages and the game summary ---------------------------
+# ---- Player / team pages ------------------------------------------------
 # All verified live 2026-10-06 against statsapi.mlb.com.
 
 def _get(path: str, params: dict) -> dict:
@@ -209,3 +209,11 @@ def get_league_team_splits(season: int) -> dict:
     return _get("teams/stats", {"stats": "statSplits", "group": "hitting", "sitCodes": "vl,vr",
                                 "season": season, "gameType": REGULAR_SEASON, "sportIds": 1,
                                 "limit": 100})
+
+
+def get_scoreboard(start_date: str, end_date: str) -> dict:
+    """Every game between two dates (inclusive) with scores, inning,
+    probable pitchers, venue, team abbreviations and postseason series
+    status -- one call feeds the homepage (last night, today, coming up)."""
+    return _get("schedule", {"sportId": 1, "startDate": start_date, "endDate": end_date,
+                             "hydrate": "linescore,team,probablePitcher,seriesStatus,venue"})

@@ -348,42 +348,19 @@
   a.plink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
   a.plink:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-  /* ---- Game summary card ---- */
-  .summary-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-  .sm-grid { display: grid; grid-template-columns: minmax(78px, 0.8fr) 1fr 1fr; column-gap: 12px; row-gap: 0; }
-  .sm-grid > div { padding: 9px 0; border-top: 1px solid var(--line); }
-  .sm-grid > .sm-h { border-top: none; padding-top: 0; font-family: var(--font-display); font-weight: 600; font-size: 14.5px; }
-  .sm-k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-  .sm-v { font-size: 13px; line-height: 1.35; }
-  .sm-big { font-family: var(--font-mono); font-weight: 600; font-size: 15px; }
-  .sm-big.good { color: var(--accent); }
-  .sm-big.bad { color: var(--stitch); }
-  .sm-unit { font-size: 11.5px; color: var(--muted); }
-  .sm-sub { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
-  .sm-muted { color: var(--muted); }
-  .sm-ok { color: var(--accent); font-weight: 600; }
-  .sm-pen { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
-  .sm-pen .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .sm-pen.bp-fresh .dot { background: var(--accent); }
-  .sm-pen.bp-moderate .dot { background: var(--muted); }
-  .sm-pen.bp-taxed .dot, .sm-pen.bp-exhausted .dot { background: var(--stitch); }
-  .sm-pen.bp-taxed, .sm-pen.bp-exhausted { color: var(--stitch); }
-  .sm-park { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 0; font-size: 13px; }
-  .sm-park .sm-k { margin-right: 6px; }
-  @media (max-width: 420px) {
-    .summary-card { padding: 12px 12px; }
-    .sm-grid { grid-template-columns: 64px 1fr 1fr; column-gap: 8px; }
-    .sm-k { font-size: 10px; }
-    .sm-v { font-size: 12px; }
-    .sm-big { font-size: 14px; }
-    .sm-grid > .sm-h { font-size: 13px; }
-  }
-
   /* ---- Player / team pages ---- */
   .pg { display: flex; flex-direction: column; gap: 14px; }
   .pg-head { padding: 20px 18px; }
   .pg-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-  .pg-title { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin-bottom: 8px; }
+  .pg-title { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 0 0 8px; }
+  .pg-lede { font-size: 14.5px; line-height: 1.5; margin: 0 2px; }
+  .pg-pen { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .pg-pen .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .pg-pen.bp-fresh .dot { background: var(--accent); }
+  .pg-pen.bp-moderate .dot { background: var(--muted); }
+  .pg-pen.bp-taxed .dot, .pg-pen.bp-exhausted .dot { background: var(--stitch); }
+  .pg-pen.bp-taxed, .pg-pen.bp-exhausted { color: var(--stitch); }
+  .pg-head .matchup-teams .matchup-team-name { font-size: 22px; }
   .pg-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
   .pg-scroll { border: none; border-radius: 0; }
   table.pg-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -408,12 +385,136 @@
   .pg-roster ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
   .pg-roster li { display: flex; gap: 6px; align-items: baseline; }
 
+  /* ---- Site header (every page) ---- */
+  .site-header { position: sticky; top: 0; z-index: 50; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .sh-bar { max-width: 1180px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 18px; }
+  .sh-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); text-decoration: none; font-family: var(--font-display); font-weight: 600; font-size: 19px; white-space: nowrap; flex-shrink: 0; }
+  .sh-mark { width: 26px; height: 26px; color: var(--accent); }
+  .sh-nav { display: flex; gap: 4px; }
+  .sh-nav a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; padding: 6px 10px; border-radius: 8px; }
+  .sh-nav a:hover { color: var(--ink); background: var(--surface-2); }
+  .sh-nav a.active { color: var(--accent); background: var(--accent-soft); }
+  .sh-search { position: relative; margin-left: auto; flex: 0 1 300px; min-width: 0; }
+  .sh-search input { width: 100%; font-family: var(--font-body); font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px 8px 34px; outline: none; -webkit-appearance: none; appearance: none; }
+  .sh-search input:focus { border-color: var(--accent); }
+  .sh-search-icon { position: absolute; left: 12px; top: 50%; width: 15px; height: 15px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .sh-results { position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,0.14); padding: 6px; max-height: 60vh; overflow-y: auto; z-index: 60; }
+  .sh-results a { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 14px; }
+  .sh-results a:hover, .sh-results a.kbd { background: var(--surface-2); }
+  .sh-results .r-kind { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+  .sh-results .r-empty { padding: 10px; font-size: 13px; color: var(--muted); }
+  .sh-teams { border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .sh-teams::-webkit-scrollbar { display: none; }
+  /* Scrolls sideways on a phone; on a wide screen its left edge lines up
+     with the logo (the header's 1180px column). */
+  .sh-teams-inner { padding: 6px 16px 6px max(16px, calc((100vw - 1180px) / 2 + 16px)); display: flex; align-items: center; gap: 2px; width: max-content; }
+  .sh-lg { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; color: var(--muted); margin-right: 4px; }
+  .sh-sep { width: 1px; height: 16px; background: var(--line); margin: 0 10px; flex-shrink: 0; }
+  .sh-team { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--ink); text-decoration: none; padding: 4px 6px; border-radius: 6px; }
+  .sh-team:hover, .sh-team.active { background: var(--accent-soft); color: var(--accent); }
+  @media (max-width: 640px) {
+    .sh-bar { flex-wrap: wrap; gap: 8px 10px; padding: 10px 16px 8px; }
+    .sh-brand { font-size: 17px; }
+    .sh-mark { width: 22px; height: 22px; }
+    .sh-nav { margin-left: auto; }
+    .sh-search { order: 3; flex: 1 1 100%; }
+    .sh-search input { font-size: 16px; padding: 7px 14px 7px 34px; }  /* 16px: no iOS zoom on focus */
+  }
+
+  /* ---- Homepage ---- */
+  .wrap.wide { max-width: 1180px; }
+  .home { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
+  .home-main { display: flex; flex-direction: column; gap: 22px; }
+  .home-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 112px; }
+  .home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+  .home-head .sub { margin-top: 6px; }
+  .day-h { display: flex; align-items: baseline; gap: 10px; font-family: var(--font-display); font-weight: 600; font-size: 20px; margin: 0 0 10px; }
+  .day-h small { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--muted); }
+  .gc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .gc { display: flex; flex-direction: column; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; color: inherit; text-decoration: none; }
+  a.gc:hover { border-color: var(--accent); }
+  .gc-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; font-size: 12px; color: var(--muted); }
+  .more-days { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -8px; }
+  .more-days a { text-decoration: none; }
+  .gc-when { font-family: var(--font-mono); font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .gc-when.live { color: var(--stitch); }
+  .gc-when.live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--stitch); margin-right: 6px; vertical-align: 1px; animation: gc-pulse 1.6s ease-in-out infinite; }
+  @keyframes gc-pulse { 50% { opacity: 0.3; } }
+  .gc-series { margin-left: auto; text-align: right; white-space: nowrap; }
+  .gc-teams { display: flex; flex-direction: column; gap: 8px; }
+  .gc-team { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+  .abbr-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.02em; padding: 4px 6px; border-radius: 7px; background: var(--surface-2); color: var(--ink); }
+  .gc-name { font-family: var(--font-display); font-weight: 600; font-size: 16.5px; line-height: 1.15; }
+  .gc-name small { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .gc-sp { font-size: 12.5px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gc-score { font-family: var(--font-mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .gc-team.win .gc-score, .gc-team.win .gc-name { color: var(--ink); }
+  .gc.is-final .gc-team:not(.win) .gc-name { color: var(--muted); }
+  .gc-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+  .gc-meta .bp-badge { font-size: 11px; }
+  .gc-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12.5px; }
+  .gc-go { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .gc-note { color: var(--muted); }
+  .gc-foot .gc-note { flex: 1 1 auto; }
+  .gc-tag { flex-shrink: 0; font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+  .side-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .side-card h2 { font-family: var(--font-display); font-weight: 600; font-size: 17px; margin: 0; }
+  .side-card .side-sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin: 2px 0 8px; }
+  .sb-game { padding: 10px 0; border-top: 1px solid var(--line); }
+  .sb-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 2px 0; color: var(--muted); }
+  .sb-row.win { color: var(--ink); font-weight: 600; }
+  .sb-row a { color: inherit; text-decoration: none; }
+  .sb-row a:hover { color: var(--accent); }
+  .sb-row .abbr-chip { min-width: 38px; margin-right: 8px; font-size: 11px; }
+  .sb-row .sb-score { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .sb-note { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .side-links { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+  .side-links a { font-size: 13.5px; color: var(--ink); text-decoration: none; padding: 5px 0; display: flex; justify-content: space-between; }
+  .side-links a:hover { color: var(--accent); }
+  .side-links a::after { content: "→"; color: var(--muted); }
+  .day-empty { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 18px; color: var(--muted); font-size: 14px; }
+  @media (max-width: 900px) {
+    .home { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+    .home-side { position: static; }
+  }
+  @media (max-width: 420px) {
+    .gc-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* ---- Teams index ---- */
+  .pg-hero { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+  .teams-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .teams-div ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .teams-div li a { display: flex; align-items: center; gap: 10px; padding: 7px 0; color: var(--ink); text-decoration: none; font-size: 14.5px; border-top: 1px solid var(--line); }
+  .teams-div li:first-child a { border-top: 0; }
+  .teams-div li a:hover { color: var(--accent); }
+
   @media (max-width: 420px) {
     h1 { font-size: 26px; }
   }
 </style>
 </head>
 <body>
+<header class="site-header">
+  <div class="sh-bar">
+    <a class="sh-brand" href="/" aria-label="At the Plate home">
+      <svg class="sh-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9.5 6.8c2.6 2.6 3.9 5.7 3.9 9.2s-1.3 6.6-3.9 9.2M22.5 6.8c-2.6 2.6-3.9 5.7-3.9 9.2s1.3 6.6 3.9 9.2" fill="none" stroke="var(--stitch)" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="1.6 2.4"/></svg>
+      <span>At the Plate</span>
+    </a>
+    <nav class="sh-nav" aria-label="Main">
+      <a href="/" data-nav="games">Games</a>
+      <a href="/teams" data-nav="teams">Teams</a>
+    </nav>
+    <div class="sh-search" role="search">
+      <svg class="sh-search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      <input type="search" id="site-search" placeholder="Search players or teams" autocomplete="off" aria-label="Search players or teams">
+      <div class="sh-results" id="site-search-results" hidden></div>
+    </div>
+  </div>
+  <nav class="sh-teams" aria-label="Teams">
+    <div class="sh-teams-inner"><span class="sh-lg">AL</span><a class="sh-team" href="/team/baltimore-orioles" title="Baltimore Orioles">BAL</a><a class="sh-team" href="/team/boston-red-sox" title="Boston Red Sox">BOS</a><a class="sh-team" href="/team/new-york-yankees" title="New York Yankees">NYY</a><a class="sh-team" href="/team/tampa-bay-rays" title="Tampa Bay Rays">TB</a><a class="sh-team" href="/team/toronto-blue-jays" title="Toronto Blue Jays">TOR</a><a class="sh-team" href="/team/chicago-white-sox" title="Chicago White Sox">CWS</a><a class="sh-team" href="/team/cleveland-guardians" title="Cleveland Guardians">CLE</a><a class="sh-team" href="/team/detroit-tigers" title="Detroit Tigers">DET</a><a class="sh-team" href="/team/kansas-city-royals" title="Kansas City Royals">KC</a><a class="sh-team" href="/team/minnesota-twins" title="Minnesota Twins">MIN</a><a class="sh-team" href="/team/athletics" title="Athletics">ATH</a><a class="sh-team" href="/team/houston-astros" title="Houston Astros">HOU</a><a class="sh-team" href="/team/los-angeles-angels" title="Los Angeles Angels">LAA</a><a class="sh-team" href="/team/seattle-mariners" title="Seattle Mariners">SEA</a><a class="sh-team" href="/team/texas-rangers" title="Texas Rangers">TEX</a><span class="sh-sep"></span><span class="sh-lg">NL</span><a class="sh-team" href="/team/atlanta-braves" title="Atlanta Braves">ATL</a><a class="sh-team" href="/team/miami-marlins" title="Miami Marlins">MIA</a><a class="sh-team" href="/team/new-york-mets" title="New York Mets">NYM</a><a class="sh-team" href="/team/philadelphia-phillies" title="Philadelphia Phillies">PHI</a><a class="sh-team" href="/team/washington-nationals" title="Washington Nationals">WSH</a><a class="sh-team" href="/team/chicago-cubs" title="Chicago Cubs">CHC</a><a class="sh-team" href="/team/cincinnati-reds" title="Cincinnati Reds">CIN</a><a class="sh-team" href="/team/milwaukee-brewers" title="Milwaukee Brewers">MIL</a><a class="sh-team" href="/team/pittsburgh-pirates" title="Pittsburgh Pirates">PIT</a><a class="sh-team" href="/team/st-louis-cardinals" title="St. Louis Cardinals">STL</a><a class="sh-team" href="/team/arizona-diamondbacks" title="Arizona Diamondbacks">AZ</a><a class="sh-team" href="/team/colorado-rockies" title="Colorado Rockies">COL</a><a class="sh-team" href="/team/los-angeles-dodgers" title="Los Angeles Dodgers">LAD</a><a class="sh-team" href="/team/san-diego-padres" title="San Diego Padres">SD</a><a class="sh-team" href="/team/san-francisco-giants" title="San Francisco Giants">SF</a></div>
+  </nav>
+</header>
 <div class="wrap" id="app"></div>
 
 <script>
@@ -424,11 +525,15 @@
   var gamesCache = {};           // date (YYYY-MM-DD) -> Promise of games array
   var currentDate = todayISO();
 
+  // Today on MLB's calendar (US Eastern), like the server -- not the
+  // viewer's own date, which on the West Coast flips at 9pm PT.
   function todayISO() {
-    var d = new Date();
-    var m = String(d.getMonth() + 1).padStart(2, "0");
-    var day = String(d.getDate()).padStart(2, "0");
-    return d.getFullYear() + "-" + m + "-" + day;
+    try {
+      return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    } catch (e) {
+      var d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
   }
 
   function el(html) {
@@ -469,8 +574,7 @@
       .then(function (r) { if (!r.ok) throw new Error("lineup request failed"); return r.json(); });
   }
 
-  // One request per URL per page view (the game summary and the starter
-  // cards both want the same pitcher overview).
+  // One request per URL, reused for 10 minutes.
   var jsonCache = {};
   var JSON_CACHE_MS = 10 * 60 * 1000;   // same cadence as the server's pre-game refresh
   function fetchJSON(url) {
@@ -489,18 +593,29 @@
   }
 
   // ---- Links to player / team pages ----
-  function playerHref(id) { return "#/player/" + id + "/" + currentDate; }
-  function teamHref(id) { return "#/team/" + id + "/" + currentDate; }
+  // Real, search-friendly addresses -- /player/austin-riley-663586,
+  // /team/atlanta-braves, /bvp/<batter>-vs-<pitcher>-<ids> -- not part
+  // of any game's URL. Those pages are built on the server (api/templates),
+  // so these are ordinary links. slugify() must match scripts/slugs.py
+  // exactly (the server redirects any other spelling to the canonical one).
+  function slugify(name) {
+    return String(name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+  function playerHref(id, name) { var b = slugify(name); return "/player/" + (b ? b + "-" : "") + id; }
+  // Batter vs pitcher page: batter first, then both ids (scripts/slugs.py bvp_slug).
+  function bvpHref(batterId, batterName, pitcherId, pitcherName) {
+    var names = [slugify(batterName), slugify(pitcherName)].filter(Boolean).join("-vs-");
+    return "/bvp/" + (names ? names + "-" : "") + batterId + "-" + pitcherId;
+  }
+  function teamHref(id, name) { return "/team/" + (slugify(name) || id); }
   function playerLink(id, name) {
-    return id ? '<a class="plink" href="' + playerHref(id) + '">' + escapeHtml(name || "") + '</a>' : escapeHtml(name || "");
+    return id ? '<a class="plink" href="' + playerHref(id, name) + '">' + escapeHtml(name || "") + '</a>' : escapeHtml(name || "");
   }
   function teamLink(id, name) {
-    return id ? '<a class="plink" href="' + teamHref(id) + '">' + escapeHtml(name || "") + '</a>' : escapeHtml(name || "");
+    return id ? '<a class="plink" href="' + teamHref(id, name) + '">' + escapeHtml(name || "") + '</a>' : escapeHtml(name || "");
   }
-  function ordinal(n) {
-    var s = ["th", "st", "nd", "rd"], v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
-  }
+
 
   function fetchEstimates(pitcherId, opponentTeamId, date, gamePk, isReliever) {
     return fetch("/api/estimates?pitcher=" + pitcherId + "&opponent_team=" + opponentTeamId +
@@ -640,52 +755,241 @@
 
   // ---- Routing: "#/" = home, "#/game/<date>/<gamePk>/<pitcherId?>" = game page ----
   function route() {
+    // Player / team / BvP pages arrive fully built from the server.
+    if (app.getAttribute("data-ssr")) return;
+    stopLiveRefresh();
     var hash = location.hash.replace(/^#\/?/, "");
     var parts = hash.split("/").filter(Boolean);
     if (parts[0] === "game" && parts[1] && parts[2]) {
       currentDate = parts[1];
+      app.classList.remove("wide");
       renderGameRoute(parts[1], parseInt(parts[2], 10), parts[3] ? parseInt(parts[3], 10) : null);
-    } else if ((parts[0] === "player" || parts[0] === "team") && parts[1]) {
-      if (parts[2]) currentDate = parts[2];
-      window.scrollTo(0, 0);
-      if (parts[0] === "player") renderPlayerPage(parseInt(parts[1], 10));
-      else renderTeamPage(parseInt(parts[1], 10));
     } else {
-      renderHome();
+      app.classList.add("wide");
+      renderHome(parts[0] === "date" && /^\d{4}-\d{2}-\d{2}$/.test(parts[1] || "") ? parts[1] : null);
     }
+    window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);
 
   // ---- Home view ----
-  function renderHome() {
-    app.innerHTML = "";
-    var header = el(
-      '<header style="display:flex;flex-direction:column;gap:14px">' +
-        '<div class="eyebrow">At the plate</div>' +
-        '<h1>Today’s Games</h1>' +
-        '<p class="sub">Pick a game to see the batter-vs-pitcher breakdown and game-time wind conditions.</p>' +
-        '<div class="date-row">' +
-          '<input type="date" id="date-input" value="' + currentDate + '">' +
-          '<button class="today-btn" id="today-btn" type="button">Today</button>' +
-        '</div>' +
-      '</header>'
-    );
-    app.appendChild(header);
-    var listHost = el('<div class="games-list"><div class="loading">Loading today’s games&hellip;</div></div>');
-    app.appendChild(listHost);
+  // Today's games (and, on today's page, the next few game days, so an off
+  // day still shows what's coming), plus the last finished game day's
+  // scores. One call: /api/slate. Scores are MLB's live scoreboard, so the
+  // page re-polls every minute while a game is in progress.
+  var liveTimer = null;
+  function stopLiveRefresh() { if (liveTimer) { clearInterval(liveTimer); liveTimer = null; } }
 
-    document.getElementById("date-input").addEventListener("change", function (e) {
-      currentDate = e.target.value;
-      loadGamesInto(listHost);
-    });
-    document.getElementById("today-btn").addEventListener("click", function () {
-      currentDate = todayISO();
-      document.getElementById("date-input").value = currentDate;
-      loadGamesInto(listHost);
-    });
-    loadGamesInto(listHost);
+  function fetchSlate(date) {
+    return fetch("/api/slate" + (date ? "?date=" + encodeURIComponent(date) : ""))
+      .then(function (r) { if (!r.ok) throw new Error("slate request failed"); return r.json(); });
   }
 
+  function etDate(iso, opts) {
+    // "2026-10-26" -> a label for that calendar date (noon UTC so no
+    // timezone can push it onto a neighbouring day).
+    return new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", Object.assign({ timeZone: "UTC" }, opts));
+  }
+  function dayLabel(iso, today) {
+    var diff = Math.round((Date.parse(iso + "T12:00:00Z") - Date.parse(today + "T12:00:00Z")) / 86400000);
+    var long = etDate(iso, { weekday: "long", month: "short", day: "numeric" });
+    if (diff === 0) return { main: "Today", sub: long };
+    if (diff === 1) return { main: "Tomorrow", sub: long };
+    if (diff === -1) return { main: "Yesterday", sub: long };
+    return { main: etDate(iso, { weekday: "long" }), sub: etDate(iso, { month: "short", day: "numeric" }) };
+  }
+  function startTimes(iso) {
+    if (!iso) return "Time TBD";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "Time TBD";
+    var et = d.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+    var pt = d.toLocaleTimeString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit" });
+    return et + " ET · " + pt + " PT";
+  }
+
+  function renderHome(browseDate) {
+    app.innerHTML = '<div class="loading">Loading games&hellip;</div>';
+    var date = browseDate || null;
+    fetchSlate(date).then(function (data) {
+      drawHome(data, !!browseDate);
+      var anyLive = data.days.some(function (d) { return d.games.some(function (g) { return g.state === "live"; }); });
+      if (anyLive && !browseDate) {
+        liveTimer = setInterval(function () {
+          fetchSlate(null).then(function (fresh) {
+            var y = window.scrollY;
+            drawHome(fresh, false);
+            window.scrollTo(0, y);
+          }).catch(function () {});
+        }, 60000);
+      }
+    }).catch(function () {
+      app.innerHTML = '<div class="empty-day">Couldn’t load games right now. Try reloading the page.</div>';
+    });
+  }
+
+  var HOME_TITLE = document.title;   // the server's homepage <title>
+  function drawHome(data, browsing) {
+    document.title = HOME_TITLE;
+    var first = data.days[0];
+    var lbl = dayLabel(first.date, data.today);
+    var nGames = first.games.length;
+    var title = browsing && first.date !== data.today
+      ? "Games · " + etDate(first.date, { weekday: "short", month: "short", day: "numeric" })
+      : (nGames ? "Today’s Games" : "No games today");
+    var sub;
+    if (nGames) {
+      sub = nGames + " game" + (nGames === 1 ? "" : "s") + ". Tap one for batter-vs-pitcher history, starters, weather and bullpens.";
+    } else if (data.days.length > 1) {
+      var nxt = data.days[1], g0 = nxt.games[0];
+      sub = "Next up: " + dayLabel(nxt.date, data.today).main + (g0 && g0.series ? ", " + escapeHtml(g0.series.label) : "") + ".";
+    } else {
+      sub = browsing ? "No MLB games on this date." : "No MLB games scheduled in the next week.";
+    }
+
+    app.innerHTML = "";
+    var home = el('<div class="home"><div class="home-main"></div><aside class="home-side"></aside></div>');
+    var main = home.querySelector(".home-main"), side = home.querySelector(".home-side");
+    main.appendChild(el(
+      '<header class="home-head">' +
+        '<div><div class="eyebrow">' + escapeHtml(lbl.sub) + '</div><h1>' + title + '</h1><p class="sub">' + sub + '</p></div>' +
+        '<div class="date-row">' +
+          '<input type="date" id="date-input" aria-label="Pick a date" value="' + escapeHtml(first.date) + '">' +
+          (browsing ? '<a class="today-btn" href="#/">Today</a>' : "") +
+        '</div>' +
+      '</header>'
+    ));
+
+    function daySection(title, small, games, withDay) {
+      var sec = el('<section><h2 class="day-h">' + escapeHtml(title) + (small ? ' <small>' + escapeHtml(small) + '</small>' : "") +
+        '</h2><div class="gc-grid"></div></section>');
+      var grid = sec.querySelector(".gc-grid");
+      games.forEach(function (g) { grid.appendChild(gameCard(g, data.days_ahead_pulled, withDay)); });
+      return sec;
+    }
+    if (nGames) {
+      var todaySec = daySection("", null, first.games, false);
+      todaySec.removeChild(todaySec.querySelector(".day-h"));   // the page heading already says which day
+      main.appendChild(todaySec);
+    }
+    // Coming up (today's page only). A light slate -- the postseason, the
+    // All-Star break -- goes in one grid with the day on each card; a full
+    // regular-season slate shows the next game day, with the days after it
+    // one tap away.
+    var upcoming = data.days.slice(1);
+    var nUp = upcoming.reduce(function (n, d) { return n + d.games.length; }, 0);
+    if (nUp && nUp <= 8) {
+      main.appendChild(daySection("Coming up", null, [].concat.apply([], upcoming.map(function (d) { return d.games; })), true));
+    } else if (nUp) {
+      var nd = upcoming[0], dl = dayLabel(nd.date, data.today);
+      main.appendChild(daySection(dl.main, dl.sub, nd.games, false));
+      if (upcoming.length > 1) {
+        main.appendChild(el('<div class="more-days">' + upcoming.slice(1).map(function (d) {
+          return '<a class="today-btn" href="#/date/' + d.date + '">' + escapeHtml(etDate(d.date, { weekday: "short", month: "short", day: "numeric" })) +
+            ' · ' + d.games.length + ' game' + (d.games.length === 1 ? "" : "s") + ' &rarr;</a>';
+        }).join("") + '</div>'));
+      }
+    }
+
+    side.appendChild(scoresCard(data.recent, data.today));
+    app.appendChild(home);
+
+    document.getElementById("date-input").addEventListener("change", function (e) {
+      var v = e.target.value;
+      if (!v) return;
+      location.hash = v === data.today ? "#/" : "#/date/" + v;
+    });
+  }
+
+  function teamRow(g, side) {
+    var t = g[side];
+    var showScore = (g.state === "live" || g.state === "final") && t.score !== null && t.score !== undefined;
+    var rec = (g.game_type === "R" && t.wins !== null && t.wins !== undefined) ? '<small>' + t.wins + '-' + t.losses + '</small>' : "";
+    var sp = t.probable ? escapeHtml(t.probable.name) : "Starter TBD";
+    return '<div class="gc-team' + (g.state === "final" && t.winner ? " win" : "") + '">' +
+      '<span class="abbr-chip">' + escapeHtml(t.abbr || "") + '</span>' +
+      '<div><div class="gc-name">' + escapeHtml(t.short || t.name) + rec + '</div>' +
+        (g.state === "final" ? "" : '<div class="gc-sp">' + sp + '</div>') + '</div>' +
+      (showScore ? '<span class="gc-score">' + t.score + '</span>' : '<span></span>') +
+    '</div>';
+  }
+
+  function gameCard(g, daysAhead, withDay) {
+    var when, cls = "gc-when";
+    if (g.state === "live") { when = (g.inning && g.inning.ordinal) ? escapeHtml((g.inning.half || "") + " " + g.inning.ordinal) : "Live"; cls += " live"; }
+    else if (g.state === "final") { when = "Final" + (g.innings && g.innings > 9 ? "/" + g.innings : ""); }
+    else if (g.state === "postponed") { when = escapeHtml(g.status || "Postponed"); }
+    else { when = g.time_tbd ? "Time TBD" : startTimes(g.time); }
+    if (withDay) when = escapeHtml(etDate(g.date, { weekday: "short", month: "numeric", day: "numeric" })) + " · " + when;
+    var series = g.series ? escapeHtml(g.series.label) : "";
+
+    var meta = [];
+    if (g.venue && g.venue.name) meta.push(escapeHtml(g.venue.name));
+    if (g.venue_hr_factor) meta.push("HR park factor " + Math.round(g.venue_hr_factor));
+    if (g.venue_roof_type === "Dome") meta.push("Indoors");
+    else if (g.temp_f !== null && g.temp_f !== undefined && g.state !== "final") {
+      meta.push(Math.round(g.temp_f) + "°" + (g.wind_speed_mph !== null && g.wind_speed_mph !== undefined ? " · wind " + Math.round(g.wind_speed_mph) + " mph" : ""));
+    }
+    var bp = "";
+    if (g.state !== "final") {
+      ["away", "home"].forEach(function (s) {
+        var f = g[s].bullpen;
+        if (f) bp += '<span class="bp-badge ' + fatigueClass(f.label) + '"><span class="dot"></span>' + escapeHtml(g[s].abbr || "") + ' pen: ' + escapeHtml(f.label) + '</span>';
+      });
+    }
+
+    var foot;
+    if (g.ready) {
+      var tag = "";
+      if (g.state === "scheduled" && g.lineups) {
+        tag = (g.lineups.away && g.lineups.home) ? '<span class="gc-tag">Lineups posted</span>'
+          : (g.lineups.away || g.lineups.home) ? '<span class="gc-tag">1 lineup posted</span>' : "";
+      }
+      if (g.series && g.series.result && g.state !== "final") tag = tag || '<span class="gc-note">' + escapeHtml(g.series.result) + '</span>';
+      if (g.state === "final" && g.series && g.series.result) tag = '<span class="gc-note">' + escapeHtml(g.series.result) + '</span>';
+      foot = '<div class="gc-foot">' + (tag || "<span></span>") + '<span class="gc-go">Matchups &rarr;</span></div>';
+    } else {
+      foot = '<div class="gc-foot"><span class="gc-note">' +
+        (g.state === "postponed" ? "" : "Matchup data posts " + (daysAhead || 3) + " days before first pitch.") +
+        '</span>' + (g.series && g.series.if_necessary ? '<span class="gc-tag">If necessary</span>' : "") + '</div>';
+    }
+
+    var inner =
+      '<div class="gc-top"><span class="' + cls + '">' + when + '</span><span class="gc-series">' + series + '</span></div>' +
+      '<div class="gc-teams">' + teamRow(g, "away") + teamRow(g, "home") + '</div>' +
+      (meta.length || bp ? '<div class="gc-meta">' + meta.map(function (m) { return "<span>" + m + "</span>"; }).join("") + bp + '</div>' : "") +
+      foot;
+    var finalCls = g.state === "final" ? " is-final" : "";
+    if (g.ready) {
+      var href = "#/game/" + g.date + "/" + g.game_pk + (g.start_pitcher_id ? "/" + g.start_pitcher_id : "");
+      return el('<a class="gc' + finalCls + '" href="' + href + '" aria-label="' +
+        escapeHtml((g.away.name || "") + " at " + (g.home.name || "")) + '">' + inner + '</a>');
+    }
+    return el('<div class="gc' + finalCls + '">' + inner + '</div>');
+  }
+
+  function scoresCard(recent, today) {
+    if (!recent || !recent.games.length) {
+      return el('<section class="side-card"><h2>Last night</h2><p class="sb-note">No finished games in the last few days.</p></section>');
+    }
+    var lbl = dayLabel(recent.date, today);
+    var heading = lbl.main === "Yesterday" ? "Last night" : "Latest scores";
+    var html = '<section class="side-card"><h2>' + heading + '</h2><div class="side-sub">' +
+      escapeHtml(etDate(recent.date, { weekday: "long", month: "short", day: "numeric" })) + '</div>';
+    recent.games.forEach(function (g) {
+      html += '<div class="sb-game">';
+      ["away", "home"].forEach(function (s) {
+        var t = g[s];
+        html += '<div class="sb-row' + (t.winner ? " win" : "") + '"><span><span class="abbr-chip">' + escapeHtml(t.abbr || "") + '</span>' +
+          teamLink(t.id, t.short || t.name) + '</span><span class="sb-score">' + (t.score === null || t.score === undefined ? "–" : t.score) + '</span></div>';
+      });
+      var note = ["Final" + (g.innings && g.innings > 9 ? "/" + g.innings : "")];
+      if (g.series) { note.push(g.series.label); if (g.series.result) note.push(g.series.result); }
+      html += '<div class="sb-note">' + escapeHtml(note.join(" · ")) + '</div></div>';
+    });
+    return el(html + '</section>');
+  }
+
+  // Probable-pitcher line on the game page header.
   function pitchersLineText(g) {
     if (g.away_probable_pitcher && g.home_probable_pitcher) {
       return escapeHtml(g.away_probable_pitcher) + " vs " + escapeHtml(g.home_probable_pitcher);
@@ -696,37 +1000,67 @@
     return "Probable pitchers not yet announced";
   }
 
-  function loadGamesInto(host) {
-    host.innerHTML = '<div class="loading">Loading today’s games&hellip;</div>';
-    fetchGames(currentDate).then(function (games) {
-      host.innerHTML = "";
-      if (!games.length) {
-        host.appendChild(el('<div class="empty-day">No games on this date.</div>'));
-        return;
-      }
-      games.slice().sort(function (a, b) {
-        return (a.game_date_time || "").localeCompare(b.game_date_time || "");
-      }).forEach(function (g) {
-        var row = el(
-          '<button type="button" class="game-row">' +
-            '<div>' +
-              '<div class="matchup-name">' + escapeHtml(g.away_team) + '<span class="at">at</span>' + escapeHtml(g.home_team) + '</div>' +
-              '<div class="pitchers-line">' + pitchersLineText(g) + ' &middot; ' + escapeHtml(g.venue_name || "Venue TBD") + '</div>' +
-              bullpenBadgesHtml(g) +
-            '</div>' +
-            '<svg class="chev" viewBox="0 0 20 20" fill="none"><path d="M5 7.5 10 13 15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-          '</button>'
-        );
-        row.addEventListener("click", function () {
-          var startId = g.away_probable_pitcher_id || g.home_probable_pitcher_id || "";
-          location.hash = "#/game/" + currentDate + "/" + g.game_pk + (startId ? "/" + startId : "");
-        });
-        host.appendChild(row);
-      });
-    }).catch(function () {
-      host.innerHTML = '<div class="empty-day">Couldn’t load games right now. Try reloading the page.</div>';
+  // ---- Site header: active nav + search ----
+  (function siteHeader() {
+    var path = location.pathname;
+    var navKey = path === "/" ? "games" : (path === "/teams" || path.indexOf("/team/") === 0) ? "teams" : null;
+    document.querySelectorAll(".sh-nav a").forEach(function (a) {
+      if (a.getAttribute("data-nav") === navKey) a.classList.add("active");
     });
-  }
+    document.querySelectorAll(".sh-team").forEach(function (a) {
+      if (a.getAttribute("href") === path) { a.classList.add("active"); try { a.scrollIntoView({ inline: "center", block: "nearest" }); } catch (e) {} }
+    });
+
+    var input = document.getElementById("site-search");
+    var box = document.getElementById("site-search-results");
+    if (!input || !box) return;
+    var teams = [].slice.call(document.querySelectorAll(".sh-team")).map(function (a) {
+      return { name: a.getAttribute("title"), abbr: a.textContent, href: a.getAttribute("href") };
+    });
+    var timer = null, seq = 0, sel = -1;
+    function close() { box.hidden = true; box.innerHTML = ""; sel = -1; }
+    function show(items, q) {
+      sel = -1;
+      if (!items.length) { box.innerHTML = '<div class="r-empty">No players or teams match “' + escapeHtml(q) + '”.</div>'; box.hidden = false; return; }
+      box.innerHTML = items.map(function (it) {
+        return '<a href="' + it.href + '"><span>' + escapeHtml(it.name) + '</span><span class="r-kind">' + escapeHtml(it.kind) + '</span></a>';
+      }).join("");
+      box.hidden = false;
+    }
+    function search() {
+      var q = input.value.trim();
+      if (q.length < 2) { close(); return; }
+      var ql = q.toLowerCase();
+      var teamHits = teams.filter(function (t) {
+        return t.name.toLowerCase().indexOf(ql) !== -1 || t.abbr.toLowerCase() === ql;
+      }).map(function (t) { return { name: t.name, href: t.href, kind: "Team" }; });
+      var mine = ++seq;
+      fetch("/api/players?q=" + encodeURIComponent(q)).then(function (r) { return r.ok ? r.json() : []; })
+        .catch(function () { return []; })
+        .then(function (rows) {
+          if (mine !== seq) return;
+          var players = (Array.isArray(rows) ? rows : []).slice(0, 10).map(function (p) {
+            return { name: p.full_name, href: playerHref(p.id, p.full_name), kind: p.role === "pitcher" ? "Pitcher" : "Hitter" };
+          });
+          show(teamHits.concat(players), q);
+        });
+    }
+    input.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(search, 180); });
+    input.addEventListener("keydown", function (e) {
+      var links = box.querySelectorAll("a");
+      if (e.key === "Escape") { close(); input.blur(); return; }
+      if (!links.length) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        sel = (sel + (e.key === "ArrowDown" ? 1 : -1) + links.length) % links.length;
+        links.forEach(function (a, i) { a.classList.toggle("kbd", i === sel); });
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        location.href = links[Math.max(sel, 0)].getAttribute("href");
+      }
+    });
+    document.addEventListener("click", function (e) { if (!e.target.closest(".sh-search")) close(); });
+  })();
 
   // ---- Game view ----
   // Only this game's own two probable starters -- the dropdown used to list
@@ -769,6 +1103,7 @@
   }
 
   function renderGame(game, pitchers, startPitcherId) {
+    document.title = game.away_team + " @ " + game.home_team + " | At the Plate";
     app.innerHTML = "";
 
     var back = el('<button type="button" class="back-link">&larr; All games</button>');
@@ -789,9 +1124,6 @@
       '</div>'
     ));
 
-    app.appendChild(el('<div class="section-label">Game Summary</div>'));
-    app.appendChild(renderGameSummary(game));
-
     app.appendChild(el('<div class="section-label">Starting Pitchers</div>'));
     app.appendChild(renderStarterCards(game));
 
@@ -808,262 +1140,6 @@
     app.appendChild(renderBullpenSection(game));
 
     app.appendChild(el('<p class="tabs-note">More planned here — lineup confirmations and market data.</p>'));
-  }
-
-  // ---- Game summary (top of the game page) ----
-  // One glance at the matchup: each lineup's season hitting vs the hand
-  // it's facing today (with its MLB rank), both starters' last 5 starts,
-  // both bullpens, whether lineups are posted, and park + weather. All
-  // facts, no projections.
-  function renderGameSummary(game) {
-    var card = el('<div class="summary-card"><div class="loading">Loading summary&hellip;</div></div>');
-    var sides = [
-      { key: "away", teamId: game.away_team_id, team: game.away_team, lineup: game.away_lineup,
-        fatigue: game.away_bullpen_fatigue, spId: game.away_probable_pitcher_id, spName: game.away_probable_pitcher },
-      { key: "home", teamId: game.home_team_id, team: game.home_team, lineup: game.home_lineup,
-        fatigue: game.home_bullpen_fatigue, spId: game.home_probable_pitcher_id, spName: game.home_probable_pitcher }
-    ];
-    var spPromises = sides.map(function (sd) {
-      return sd.spId ? fetchPitcherOverview(sd.spId, game.game_date).catch(function () { return null; }) : Promise.resolve(null);
-    });
-    var sumPromise = fetchJSON("/api/summary?game=" + game.game_pk + "&date=" + encodeURIComponent(game.game_date))
-      .catch(function () { return null; });
-
-    Promise.all([sumPromise].concat(spPromises)).then(function (res) {
-      var sum = res[0], sps = [res[1], res[2]];
-      function hitCell(sd) {
-        var s = sum && sum.sides ? sum.sides[sd.key] : null;
-        if (!s || !s.line) return '<span class="sm-muted">–</span>';
-        var hand = s.vs === "L" ? "LHP" : "RHP";
-        var lg = s.league ? s.league.ops : null;
-        var tone = lg && s.line.ops_num >= (s.league.ops_num + 0.02) ? "good" : lg && s.line.ops_num <= (s.league.ops_num - 0.02) ? "bad" : "";
-        return '<span class="sm-big ' + tone + '">' + s.line.ops + '</span> <span class="sm-unit">OPS vs ' + hand + '</span>' +
-          '<span class="sm-sub">' + (s.rank ? ordinal(s.rank) + " of " + sum.teams + " &middot; " : "") +
-          s.line.avg + '/' + s.line.obp + '/' + s.line.slg + '</span>';
-      }
-      function spCell(sd, p) {
-        if (!sd.spId) return '<span class="sm-muted">Not announced</span>';
-        var hand = p && p.throws ? (p.throws === "L" ? " (LHP)" : " (RHP)") : "";
-        var last = p && p.last_starts;
-        return playerLink(sd.spId, sd.spName) + '<span class="sm-unit">' + hand + '</span>' +
-          '<span class="sm-sub">' + (last ? "Last " + last.starts_counted + ": " + last.era + " ERA &middot; " + last.whip + " WHIP"
-            : p && p.season ? "Season: " + p.season.era + " ERA" : "") + '</span>';
-      }
-      function penCell(sd) {
-        var f = sd.fatigue;
-        if (!f) return '<span class="sm-muted">–</span>';
-        return '<span class="sm-pen ' + fatigueClass(f.label) + '"><span class="dot"></span>' + escapeHtml(f.label) + '</span>' +
-          '<span class="sm-sub">' + f.weekly_pitches + ' pitches, last 7 days</span>';
-      }
-      function lineupCell(sd) {
-        return sd.lineup && sd.lineup.length ? '<span class="sm-ok">Posted</span>' : '<span class="sm-muted">Not yet</span>';
-      }
-      var hitLabel = "Hitting vs today’s starter";
-      var rows = [
-        [hitLabel, hitCell(sides[0]), hitCell(sides[1])],
-        ["Starter", spCell(sides[0], sps[0]), spCell(sides[1], sps[1])],
-        ["Bullpen", penCell(sides[0]), penCell(sides[1])],
-        ["Lineup", lineupCell(sides[0]), lineupCell(sides[1])]
-      ];
-      var html = '<div class="sm-grid">' +
-        '<div class="sm-h"></div><div class="sm-h">' + teamLink(sides[0].teamId, sides[0].team) + '</div>' +
-        '<div class="sm-h">' + teamLink(sides[1].teamId, sides[1].team) + '</div>' +
-        rows.map(function (r) {
-          return '<div class="sm-k">' + r[0] + '</div><div class="sm-v">' + r[1] + '</div><div class="sm-v">' + r[2] + '</div>';
-        }).join("") + '</div>';
-
-      // Park + weather, one line.
-      var bits = [];
-      if (game.venue_hr_factor !== null && game.venue_hr_factor !== undefined) bits.push("HR factor " + game.venue_hr_factor);
-      if (game.venue_roof_type && /dome|indoor/i.test(game.venue_roof_type)) bits.push("Roof closed / dome");
-      if (game.temp_f !== null && game.temp_f !== undefined) bits.push(Math.round(game.temp_f) + "°");
-      var hasWind = game.wind_speed_mph !== null && game.wind_speed_mph !== undefined &&
-        game.wind_dir_deg !== null && game.venue_azimuth_angle !== null && game.venue_azimuth_angle !== undefined;
-      if (hasWind) {
-        var tone = windTone(relativeWindDeg(game));
-        bits.push(game.wind_speed_mph < 4 ? "Calm" :
-          "Wind " + game.wind_speed_mph + " mph " + (tone === "out" ? "blowing out" : tone === "in" ? "blowing in" : "across"));
-      }
-      html += '<div class="sm-park"><span class="sm-k">Park &amp; weather</span> ' +
-        escapeHtml(game.venue_name || "") + (bits.length ? ' &middot; ' + bits.join(" &middot; ") : "") + '</div>';
-      card.innerHTML = html;
-    });
-    return card;
-  }
-
-  // ---- Player and team pages ----
-  function pageBack() {
-    var b = el('<button type="button" class="back-link">&larr; Back</button>');
-    b.addEventListener("click", function () {
-      if (history.length > 1) history.back(); else location.hash = "#/";
-    });
-    return b;
-  }
-
-  // A small stat table. cols: [[header, key or fn(row)]]; first column is the row label.
-  function statTable(cols, rows) {
-    var head = '<tr>' + cols.map(function (c) { return '<th>' + c[0] + '</th>'; }).join("") + '</tr>';
-    var body = rows.map(function (r) {
-      return '<tr' + (r._cls ? ' class="' + r._cls + '"' : "") + '>' + cols.map(function (c) {
-        var v = typeof c[1] === "function" ? c[1](r) : r[c[1]];
-        return '<td>' + (v === null || v === undefined || v === "" ? "–" : v) + '</td>';
-      }).join("") + '</tr>';
-    }).join("");
-    return '<div class="table-scroll pg-scroll"><table class="pg-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
-  }
-
-  function pgCard(title, inner, note) {
-    return '<div class="pg-card"><div class="pg-title">' + title + '</div>' + inner +
-      (note ? '<div class="pg-note">' + note + '</div>' : "") + '</div>';
-  }
-
-  function shortDay(iso) {
-    var d = new Date(iso + "T12:00:00");
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
-
-  function hitRow(label, line, extra) {
-    var r = { label: label };
-    if (line) Object.keys(line).forEach(function (k) { r[k] = line[k]; });
-    if (extra) Object.keys(extra).forEach(function (k) { r[k] = extra[k]; });
-    return r;
-  }
-
-  function renderPlayerPage(pid) {
-    app.innerHTML = "";
-    app.appendChild(pageBack());
-    var host = el('<div class="pg"><div class="loading">Loading player&hellip;</div></div>');
-    app.appendChild(host);
-    fetchJSON("/api/player?id=" + pid + "&date=" + encodeURIComponent(currentDate)).then(function (p) {
-      var bio = [];
-      if (p.number) bio.push("#" + escapeHtml(p.number));
-      if (p.position) bio.push(escapeHtml(p.position));
-      bio.push("Bats " + (p.bats || "–") + " / Throws " + (p.throws || "–"));
-      if (p.age) bio.push("Age " + p.age);
-      var html = '<div class="matchup-card pg-head"><h1 class="matchup-team-name">' + escapeHtml(p.name) + '</h1>' +
-        '<div class="matchup-sub">' + bio.join(" &middot; ") + '</div>' +
-        (p.team && p.team.id ? '<div class="matchup-sub">' + teamLink(p.team.id, p.team.name) + '</div>' : "") + '</div>';
-
-      var t = p.today;
-      if (t) {
-        var gameHref = "#/game/" + t.date + "/" + t.game_pk + (p.kind === "hitter" && t.opp_starter && t.opp_starter.id ? "/" + t.opp_starter.id : "");
-        var line = (t.is_home ? "vs " : "@ ") + escapeHtml(t.opponent);
-        var detail = "";
-        if (p.kind === "hitter") {
-          if (t.opp_starter && t.opp_starter.id) {
-            var hand = t.opp_starter.throws === "L" ? "LHP" : t.opp_starter.throws === "R" ? "RHP" : "";
-            detail = 'Facing ' + playerLink(t.opp_starter.id, t.opp_starter.name) + (hand ? ' (' + hand + ')' : "");
-            var h = t.h2h;
-            detail += h ? ' &middot; ' + h.h + '-for-' + h.ab + (h.hr ? ', ' + h.hr + ' HR' : "") + ' career vs him' +
-              (h.ops ? ' (' + h.ops + ' OPS)' : "") : ' &middot; never faced him';
-          } else {
-            detail = "Opposing starter not announced yet";
-          }
-        } else {
-          var own = t.own_starter && t.own_starter.id === p.id;
-          detail = own ? "Probable starter today" : (t.own_starter && t.own_starter.name ? "Not starting (" + escapeHtml(t.own_starter.name) + " is)" : "");
-        }
-        html += '<div class="pg-today"><span class="pg-today-k">Today</span> ' + line +
-          (detail ? '<span class="pg-today-d">' + detail + '</span>' : "") +
-          '<a class="pg-today-go" href="' + gameHref + '">Game page &rarr;</a></div>';
-      }
-
-      if (p.kind === "hitter") {
-        var hitCols = [["", "label"], ["PA", "pa"], ["AVG", "avg"], ["OBP", "obp"], ["SLG", "slg"], ["OPS", "ops"],
-          ["HR", "hr"], ["K%", "k_pct"]];
-        html += pgCard("Last 3 seasons", statTable(hitCols,
-          (p.seasons || []).map(function (s) { return hitRow(s.season + (s.teams.length > 1 ? "*" : ""), s.line); })),
-          (p.seasons || []).some(function (s) { return s.teams.length > 1; }) ? "* Played for more than one team." : "Regular season.");
-        html += pgCard(p.season + " vs LHP / RHP", statTable(hitCols,
-          [hitRow("vs LHP", p.vs_hand.L), hitRow("vs RHP", p.vs_hand.R)]), "Regular season.");
-        if (p.recent && p.recent.length) {
-          html += pgCard("Recent form", statTable(hitCols, p.recent.map(function (r) {
-            return hitRow("Last " + r.games, r.line);
-          })), "His last 7 / 15 / 30 games, including the postseason (" + shortDay(p.recent[p.recent.length - 1].from) +
-            " – " + shortDay(p.recent[0].to) + ").");
-        }
-        if (p.game_log && p.game_log.length) {
-          html += pgCard("Game log", statTable([["", function (g) { return shortDay(g.date) + (g.postseason ? '<span class="pg-post">P</span>' : ""); }],
-            ["Opp", function (g) { return (g.is_home ? "vs " : "@ ") + escapeHtml(abbrevTeam(g.opponent)); }],
-            ["AB", "ab"], ["H", "h"], ["2B", "d2"], ["3B", "d3"], ["HR", "hr"], ["RBI", "rbi"], ["BB", "bb"], ["K", "so"]],
-            p.game_log), "Last 10 games. P = postseason.");
-        }
-      } else {
-        html += pgCard("Last 3 seasons", statTable([["", "label"], ["GS", "gs"], ["IP", "ip"], ["ERA", "era"], ["WHIP", "whip"],
-          ["K/9", "k9"], ["BB/9", "bb9"], ["HR/9", "hr9"]],
-          (p.seasons || []).map(function (s) { return hitRow(s.season + (s.teams.length > 1 ? "*" : ""), s.line); })),
-          "Regular season.");
-        html += pgCard(p.season + " vs LHH / RHH", statTable([["", "label"], ["BF", "bf"], ["AVG", "avg"], ["OBP", "obp"],
-          ["SLG", "slg"], ["OPS", "ops"], ["K%", "k_pct"], ["BB%", "bb_pct"]],
-          [hitRow("vs LHH", p.vs_hand.L), hitRow("vs RHH", p.vs_hand.R)]), "What hitters have done against him, regular season.");
-        if (p.recent && p.recent.length) {
-          html += pgCard(p.role === "starter" ? "Last " + p.recent.length + " starts" : "Last " + p.recent.length + " outings",
-            statTable([["", function (g) { return shortDay(g.date) + (g.postseason ? '<span class="pg-post">P</span>' : ""); }],
-              ["Opp", function (g) { return (g.is_home ? "vs " : "@ ") + escapeHtml(abbrevTeam(g.opponent)); }],
-              ["IP", "ip"], ["H", "h"], ["ER", "er"], ["BB", "bb"], ["K", "so"], ["Pit", "pitches"]], p.recent),
-            "Including the postseason. P = postseason.");
-        }
-      }
-      host.innerHTML = html;
-    }).catch(function () {
-      host.innerHTML = '<div class="empty-day">Couldn’t load this player right now. Try reloading the page.</div>';
-    });
-  }
-
-  // "Los Angeles Dodgers" -> "Dodgers" (keeps game-log tables narrow on a phone).
-  function abbrevTeam(name) {
-    if (!name) return "";
-    var two = { "Red Sox": 1, "White Sox": 1, "Blue Jays": 1 };
-    var parts = name.split(" ");
-    var last2 = parts.slice(-2).join(" ");
-    return two[last2] ? last2 : parts[parts.length - 1];
-  }
-
-  function renderTeamPage(tid) {
-    app.innerHTML = "";
-    app.appendChild(pageBack());
-    var host = el('<div class="pg"><div class="loading">Loading team&hellip;</div></div>');
-    app.appendChild(host);
-    fetchJSON("/api/team?id=" + tid + "&date=" + encodeURIComponent(currentDate)).then(function (t) {
-      var html = '<div class="matchup-card pg-head"><h1 class="matchup-team-name">' + escapeHtml(t.name || "") + '</h1></div>';
-      if (t.today) {
-        var g = t.today;
-        html += '<div class="pg-today"><span class="pg-today-k">Today</span> ' +
-          (g.is_home ? "vs " : "@ ") + escapeHtml(g.opponent) +
-          '<span class="pg-today-d">' + (g.own_starter && g.own_starter.id ? playerLink(g.own_starter.id, g.own_starter.name) : "TBA") + ' vs ' +
-          (g.opp_starter && g.opp_starter.id ? playerLink(g.opp_starter.id, g.opp_starter.name) : "TBA") + '</span>' +
-          '<a class="pg-today-go" href="#/game/' + g.date + '/' + g.game_pk + '">Game page &rarr;</a></div>';
-      }
-      var h = t.hitting || {};
-      var n = h.teams || 30;
-      function rk(r) { return r ? ordinal(r) : "–"; }
-      var cols = [["", "label"], ["AVG", "avg"], ["OBP", "obp"], ["SLG", "slg"], ["OPS", "ops"],
-        ["HR", "hr"], ["K%", "k_pct"], ["Rank", "rank"]];
-      var rows = [hitRow("Season", h.season, { rank: "" }), hitRow("vs LHP", h.L, { rank: rk(h.L_rank) }),
-        hitRow("vs RHP", h.R, { rank: rk(h.R_rank) })];
-      if (h.league) {
-        rows.push(hitRow("MLB vs LHP", h.league.L, { _cls: "pg-lg", rank: "", hr: "" }));
-        rows.push(hitRow("MLB vs RHP", h.league.R, { _cls: "pg-lg", rank: "", hr: "" }));
-      }
-      html += pgCard(t.season + " hitting", statTable(cols, rows), "Regular season. Rank = by OPS, of all " + n + " teams; MLB rows are the league average.");
-      if (t.park) {
-        html += pgCard("Home park", '<div class="pg-park"><strong>' + escapeHtml(t.park.name) + '</strong>' +
-          (t.park.hr_factor !== null && t.park.hr_factor !== undefined ? ' &middot; HR factor ' + t.park.hr_factor : "") +
-          (t.park.hit_factor !== null && t.park.hit_factor !== undefined ? ' &middot; Hit factor ' + t.park.hit_factor : "") +
-          (t.park.roof_type ? ' &middot; ' + escapeHtml(t.park.roof_type) : "") + '</div>', "Park factors: 100 = league average.");
-      }
-      html += '<div class="section-label">Bullpen</div><div class="pg-bullpen"></div>';
-      var hitters = (t.hitters || []).map(function (x) {
-        return '<li><span class="lineup-pos">' + escapeHtml(x.position || "") + '</span>' + playerLink(x.id, x.name) + '</li>';
-      }).join("");
-      var arms = (t.pitchers || []).map(function (x) { return '<li>' + playerLink(x.id, x.name) + '</li>'; }).join("");
-      html += pgCard("Active roster", '<div class="pg-roster"><div><div class="pg-sub">Hitters</div><ul>' + hitters +
-        '</ul></div><div><div class="pg-sub">Pitchers</div><ul>' + arms + '</ul></div></div>');
-      host.innerHTML = html;
-      host.querySelector(".pg-bullpen").appendChild(renderBullpenSection({ away_team_id: t.id, away_team: t.name }));
-    }).catch(function () {
-      host.innerHTML = '<div class="empty-day">Couldn’t load this team right now. Try reloading the page.</div>';
-    });
   }
 
   // ---- Starting pitchers overview ----
@@ -1378,7 +1454,10 @@
           : c[1] === "woba" ? "woba-cell" : "";
         return '<td class="' + cls + '">' + cellValue(b.stats, c[1]) + '</td>';
       }).join("");
-      tr.innerHTML = '<td>' + playerLink(b.id, b.name) + '</td>' + cells;
+      // Name -> this batter-vs-pitcher matchup's own page.
+      tr.innerHTML = '<td>' + (data.pitcher && data.pitcher.id && b.id
+        ? '<a class="plink" href="' + bvpHref(b.id, b.name, data.pitcher.id, data.pitcher.name) + '">' + escapeHtml(b.name) + '</a>'
+        : escapeHtml(b.name)) + '</td>' + cells;
       if (b.seasons && b.seasons.length) {
         tr.style.cursor = "pointer";
         tr.title = "Tap for season-by-season";

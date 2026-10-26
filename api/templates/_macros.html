@@ -1,0 +1,31 @@
+{# Shared pieces for the server-rendered pages (player / team / matchup).
+   Same markup and CSS classes the rest of the site uses, so they look
+   identical; the page's CSS lives in web/index.html. #}
+
+{% macro back() -%}
+<a class="back-link" href="/">&larr; Today&rsquo;s games</a>
+{%- endmacro %}
+
+{% macro v(x) -%}{{ '–' if x is none or x == '' else x }}{%- endmacro %}
+
+{% macro card(title, note=none) -%}
+<section class="pg-card">
+  <h2 class="pg-title">{{ title }}</h2>
+  {{ caller() }}
+  {% if note %}<div class="pg-note">{{ note }}</div>{% endif %}
+</section>
+{%- endmacro %}
+
+{# rows: list of (label, line dict); cols: list of (header, key) #}
+{% macro table(cols, rows) -%}
+<div class="table-scroll pg-scroll"><table class="pg-table">
+  <thead><tr><th></th>{% for h, k in cols %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for label, line, cls in rows %}
+    <tr{% if cls %} class="{{ cls }}"{% endif %}><td>{{ label|safe }}</td>{% for h, k in cols %}<td>{{ v(line[k] if line else none) }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{%- endmacro %}
+
+{% set HIT_COLS = [("PA", "pa"), ("AVG", "avg"), ("OBP", "obp"), ("SLG", "slg"), ("OPS", "ops"), ("HR", "hr"), ("K%", "k_pct")] %}

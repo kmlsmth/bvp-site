@@ -54,6 +54,7 @@ import pages  # noqa: E402
 import parsing  # noqa: E402
 import pitch_mix  # noqa: E402
 import savant_api  # noqa: E402
+import slugs  # noqa: E402
 import stats as stats_module  # noqa: E402
 
 BULLPEN_WINDOW_DAYS = 7  # trailing window for fatigue + recent appearances
@@ -77,24 +78,250 @@ def _start_scheduler() -> None:
     )
 
 
-@app.get("/")
-def index():
-    """The whole front end is one self-contained page (web/index.html) --
-    it does its own routing client-side (see the hash-based router in that
-    file), so this is the only page route the server needs.
 
-    Explicit no-cache: send_from_directory's default headers leave the
-    browser free to reuse an old cached copy of this page without even
-    asking the server (no Cache-Control, just Last-Modified, is enough for
-    most browsers to serve straight from disk for a while). That's exactly
-    how a deploy can "not show up" after a reload -- the browser never
-    re-requested it. no-cache (not no-store) still lets the browser keep a
-    local copy, it just has to revalidate with the server first every
-    time, so an unchanged page is still a cheap 304 and a changed one is
-    never missed."""
-    response = make_response(send_from_directory(WEB_DIR, "index.html"))
+# ---- Server-rendered pages (player / team / batter-vs-pitcher) -----------
+# These pages are built on the server (Jinja templates in api/templates),
+# so search engines and link previews get the full stats in the HTML; the
+# game pages remain the interactive app.
+
+def _ordinal(n):
+    if not n:
+        return None
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _shortday(iso):
+    try:
+        d = date.fromisoformat(str(iso)[:10])
+    except ValueError:
+        return iso
+    return d.strftime("%b ") + str(d.day)
+
+
+_TWO_WORD_NICKNAMES = {"Red Sox", "White Sox", "Blue Jays"}
+
+
+def _nickname(name):
+    parts = (name or "").split()
+    last2 = " ".join(parts[-2:])
+    return last2 if last2 in _TWO_WORD_NICKNAMES else (parts[-1] if parts else "")
+
+
+def _lastname(name):
+    parts = [x for x in (name or "").split() if x.rstrip(".") not in ("Jr", "Sr", "II", "III", "IV")]
+    return parts[-1] if parts else (name or "")
+
+
+def _matchup_sentence(x):
+    b, p, c = x["batter"]["name"], x["pitcher"]["name"], x.get("career")
+    if not c:
+        return (f"{b} has never faced {p} in a regular-season game. "
+                + ("Below: the site's projection for the matchup and each player's season split against the other's hand."
+                   if x.get("projection") else "Below: each player's season split against the other's hand."))
+    hr = f", {c['hr']} home run{'s' if c['hr'] != 1 else ''}" if c.get("hr") else ", no home runs"
+    return (f"{b} is {c['h']}-for-{c['ab']} ({c['avg']}){hr} and {c['so']} strikeout{'s' if c['so'] != 1 else ''} "
+            f"in {c['pa']} career plate appearance{'s' if c['pa'] != 1 else ''} against {p} "
+            f"({c['obp']} OBP, {c['slg']} SLG).")
+
+
+app.jinja_env.filters.update({
+    "player_url": lambda t: "/player/" + slugs.player_slug(t[1], t[0]),
+    "team_url": lambda tid: "/team/" + (slugs.team_slug(tid) or str(tid)),
+    "bvp_url": lambda t: "/bvp/" + slugs.bvp_slug(t[1], t[0], t[3], t[2]),
+    "shortday": _shortday,
+    "nickname": _nickname,
+    "lastname": _lastname,
+    "ordinal": _ordinal,
+    "season_row": lambda r: (f"{r['season']}{'*' if len(r.get('teams') or []) > 1 else ''}", r["line"], None),
+    "recent_row": lambda r: (f"Last {r['games']}", r["line"], None),
+    "multi_team": lambda seasons: any(len(r.get("teams") or []) > 1 for r in seasons or []),
+    "with_rank": lambda line, rank: dict(line or {}, rank=_ordinal(rank)) if line else None,
+    "league_row": lambda line: dict(line, hr=None, rank=None) if line else None,
+    "bf_as_pa": lambda line: dict(line, pa=line.get("bf")) if line else None,
+    "fatigue_class": lambda label: "bp-" + (label or "moderate").lower(),
+    "matchup_sentence": _matchup_sentence,
+})
+
+
+def _render_page(template: str, status: int = 200, title=None, description=None, canonical=None,
+                 noindex: bool = False, **ctx):
+    from flask import render_template
+    body = render_template(template, **ctx)
+    return _page_response(_page_html(title, description, canonical, {"ssr": True}, app_html=body,
+                                     noindex=noindex), status)
+
+
+def _error_page(message: str, status: int):
+    from html import escape
+    return _page_response(_page_html("At the Plate", app_html=(
+        '<a class="back-link" href="/">&larr; Today&rsquo;s games</a>'
+        f'<div class="empty-day">{escape(message)}</div>')), status)
+
+
+def _page_html(title: str | None = None, description: str | None = None,
+               canonical_path: str | None = None, page: dict | None = None,
+               app_html: str | None = None, noindex: bool = False) -> str:
+    """index.html with page-specific <title>, meta description, canonical
+    link and a small window.__PAGE hint, for player / team pages (so search
+    engines and link previews see the real page name, not just the app)."""
+    from html import escape
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    head = f"<title>{escape(title or 'At the Plate')}</title>"
+    if description:
+        head += f'\n<meta name="description" content="{escape(description)}">'
+    if canonical_path:
+        head += f'\n<link rel="canonical" href="{escape(request.host_url.rstrip("/") + canonical_path)}">'
+        head += f'\n<meta property="og:title" content="{escape(title or "")}">'
+    if noindex:
+        head += '\n<meta name="robots" content="noindex">'
+    if page:
+        head += "\n<script>window.__PAGE = " + json.dumps(page).replace("</", "<\\/") + ";</script>"
+    html = html.replace("<title>At the Plate</title>", head, 1)
+    if app_html is not None:
+        html = html.replace('<div class="wrap" id="app"></div>',
+                            '<div class="wrap" id="app" data-ssr="1">' + app_html + '</div>', 1)
+    return html
+
+
+def _page_response(body: str, status: int = 200):
+    response = make_response(body, status)
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
     response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+@app.get("/player/<slug>")
+def player_page(slug: str):
+    """A player's own page, built on the server: /player/austin-riley-663586.
+    Any other spelling with the right id (/player/663586, an old name)
+    redirects (301) to that canonical address."""
+    from flask import redirect
+    pid = slugs.player_id_from_slug(slug)
+    if not pid:
+        return _error_page("We couldn't find that player.", 404)
+    try:
+        p = _player_data(pid, _baseball_today())
+    except Exception as exc:
+        print(f"[player page html] {pid}: {exc}")
+        return _error_page("Couldn't load this player from MLB right now. Try again in a minute.", 503)
+    if not p.get("name"):
+        return _error_page("We couldn't find that player.", 404)
+    canonical = "/player/" + slugs.player_slug(p["name"], pid)
+    if request.path != canonical:
+        return redirect(canonical, code=301)
+    who = ", ".join(x for x in (p.get("position"), (p.get("team") or {}).get("name")) if x)
+    desc = (f"{p['name']}{' (' + who + ')' if who else ''}: " +
+            ("last 3 seasons, splits vs left- and right-handed hitters, recent starts and the hitters he's faced most."
+             if p["kind"] == "pitcher" else
+             "last 3 seasons, splits vs LHP and RHP, recent form, game log, today's matchup and the pitchers he's faced most."))
+    return _render_page("player.html", title=f"{p['name']} Stats, Splits & Matchups | At the Plate",
+                        description=desc, canonical=canonical, p=p)
+
+
+@app.get("/team/<slug>")
+def team_page(slug: str):
+    """A team's page, built on the server: /team/atlanta-braves (/team/144
+    redirects there)."""
+    from flask import redirect
+    tid = slugs.team_id_from_slug(slug)
+    if not tid:
+        return _error_page("We couldn't find that team.", 404)
+    canonical = "/team/" + slugs.team_slug(tid)
+    if request.path != canonical:
+        return redirect(canonical, code=301)
+    try:
+        t = _team_data(tid, _baseball_today())
+    except Exception as exc:
+        print(f"[team page html] {tid}: {exc}")
+        return _error_page("Couldn't load this team from MLB right now. Try again in a minute.", 503)
+    name = t.get("name") or slugs.TEAMS[tid]
+    return _render_page(
+        "team.html", title=f"{name} Hitting vs LHP & RHP, Bullpen & Roster | At the Plate",
+        description=f"{name}: team hitting vs left- and right-handed pitching with MLB ranks, bullpen workload, "
+                    f"home park factors and the active roster.",
+        canonical=canonical, t=t)
+
+
+@app.get("/teams")
+def teams_page():
+    return _render_page(
+        "teams.html", title="All 30 MLB Teams: Splits, Bullpens & Rosters | At the Plate",
+        description="Every MLB team by division, each with hitting vs LHP and RHP, bullpen workload, "
+                    "home park factors and the active roster.",
+        canonical="/teams", divisions=slugs.DIVISIONS, abbr=slugs.ABBR, teams=slugs.TEAMS)
+
+
+@app.get("/bvp/<slug>")
+def bvp_page(slug: str):
+    """Batter vs pitcher, built on the server:
+    /bvp/austin-riley-vs-yoshinobu-yamamoto-663586-808967 (batter first).
+    Other spellings redirect to that. Pairs that have never faced each other
+    still get a page (projection + splits) but are marked noindex, so search
+    engines only index matchups with real history."""
+    from flask import redirect
+    ids = slugs.bvp_ids_from_slug(slug)
+    if not ids:
+        return _error_page("We couldn't find that batter vs pitcher page.", 404)
+    bid, pid = ids
+    if bid == pid:
+        return _error_page("We couldn't find that batter vs pitcher page.", 404)
+    try:
+        x = _matchup_data(bid, pid, _baseball_today())
+    except Exception as exc:
+        print(f"[bvp page html] {bid} vs {pid}: {exc}")
+        return _error_page("Couldn't load this batter vs pitcher page from MLB right now. Try again in a minute.", 503)
+    if not x["batter"]["name"] or not x["pitcher"]["name"]:
+        return _error_page("We couldn't find that batter vs pitcher page.", 404)
+    canonical = "/bvp/" + slugs.bvp_slug(x["batter"]["name"], bid, x["pitcher"]["name"], pid)
+    if request.path != canonical:
+        return redirect(canonical, code=301)
+    b, p = x["batter"]["name"], x["pitcher"]["name"]
+    return _render_page(
+        "bvp.html", title=f"{b} vs {p}: Batter vs Pitcher Stats & History | At the Plate",
+        description=_matchup_sentence(x), canonical=canonical, noindex=not x.get("career"), x=x)
+
+
+@app.get("/robots.txt")
+def robots():
+    body = f"User-agent: *\nAllow: /\nSitemap: {request.host_url.rstrip('/')}/sitemap.xml\n"
+    return make_response(body, 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    """Home, the 30 team pages, a page for every player the site has stored
+    (probable starters, hitters with matchup history, pitchers in box
+    scores), and every stored batter-vs-pitcher matchup with 5+ PA."""
+    from html import escape
+    base = request.host_url.rstrip("/")
+    urls = [base + "/", base + "/teams"] + [base + "/team/" + slugs.team_slug(t) for t in sorted(slugs.TEAMS)]
+    for r in query_db("SELECT id, full_name FROM players WHERE full_name IS NOT NULL AND full_name != '' ORDER BY id"):
+        urls.append(base + "/player/" + slugs.player_slug(r["full_name"], r["id"]))
+    # Batter-vs-pitcher pages with real history (5+ plate appearances) --
+    # thinner ones still work, they just aren't advertised. Sitemaps max out
+    # at 50,000 URLs.
+    for r in query_db(
+            """SELECT m.batter_id, b.full_name AS bn, m.pitcher_id, p.full_name AS pn
+               FROM matchup_career m JOIN players b ON b.id = m.batter_id JOIN players p ON p.id = m.pitcher_id
+               WHERE m.plate_appearances >= 5 ORDER BY m.plate_appearances DESC LIMIT 45000"""):
+        urls.append(base + "/bvp/" + slugs.bvp_slug(r["bn"], r["batter_id"], r["pn"], r["pitcher_id"]))
+    body = ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+            "".join(f"  <url><loc>{escape(u)}</loc></url>\n" for u in urls) + "</urlset>\n")
+    return make_response(body, 200, {"Content-Type": "application/xml; charset=utf-8"})
+
+
+@app.get("/")
+def index():
+    """The homepage and game pages: web/index.html, which renders them in
+    the browser (hash routes #/, #/date/<d>, #/game/...) from /api/slate and
+    the game APIs. The server adds the homepage's title, description and
+    canonical link. no-cache: the browser always re-checks, so a deploy
+    shows up on the next load."""
+    return _page_response(_page_html(
+        "At the Plate: MLB Batter vs Pitcher Stats & Today's Matchups",
+        "Today's MLB games with batter-vs-pitcher history for every lineup, starting pitchers, "
+        "bullpen workload, park factors and game-time weather.", "/"))
 
 
 def query_db(sql: str, params: tuple = ()) -> list[dict]:
@@ -269,7 +496,13 @@ def games():
     game_date = request.args.get("date")
     if not game_date:
         return jsonify({"error": "date query param is required, e.g. ?date=2026-10-02"}), 400
+    return jsonify(_db_games(game_date))
 
+
+def _db_games(game_date: str) -> list[dict]:
+    """The games stored for one date (today plus the next UPCOMING_DAYS are
+    pulled ahead of time by the scheduler), with lineups, park, weather and
+    each team's bullpen fatigue."""
     rows = query_db(
         """
         SELECT g.game_pk, g.game_date, g.game_date_time, g.game_type, g.status,
@@ -316,7 +549,78 @@ def games():
             r["home_bullpen_fatigue"] = fatigue_by_team.get(r["home_team_id"])
             r["away_bullpen_fatigue"] = fatigue_by_team.get(r["away_team_id"])
 
-    return jsonify(rows)
+    return rows
+
+
+SCOREBOARD_CACHE_SECONDS = 60      # live scores on the homepage
+SLATE_DAYS_BACK = 4                # "last night": most recent finished game day, up to this far back
+SLATE_DAYS_AHEAD = 7               # "coming up": game days in the next week ...
+SLATE_MAX_UPCOMING_DAYS = 3        # ... at most this many of them
+
+
+def _scoreboard(start: str, end: str) -> list[dict]:
+    return _cached(("scoreboard", start, end), SCOREBOARD_CACHE_SECONDS,
+                   lambda: parsing.parse_scoreboard(mlb_api.get_scoreboard(start, end)))
+
+
+def _slate_game(g: dict, db_by_pk: dict) -> dict:
+    """One homepage card: MLB's live scoreboard row plus what the site has
+    stored for the game (park, weather, bullpen fatigue, lineups). `ready`
+    = the game's matchup data is in, so the card links to its game page."""
+    d = db_by_pk.get(g["game_pk"])
+    out = dict(g, ready=d is not None)
+    if d:
+        out.update({
+            "venue_hr_factor": d.get("venue_hr_factor"), "venue_roof_type": d.get("venue_roof_type"),
+            "temp_f": d.get("temp_f"), "wind_speed_mph": d.get("wind_speed_mph"), "sky": d.get("sky"),
+            "lineups": {"away": bool(d.get("away_lineup")), "home": bool(d.get("home_lineup"))},
+            "start_pitcher_id": d.get("away_probable_pitcher_id") or d.get("home_probable_pitcher_id"),
+        })
+        out["away"] = dict(g["away"], bullpen=d.get("away_bullpen_fatigue"))
+        out["home"] = dict(g["home"], bullpen=d.get("home_bullpen_fatigue"))
+    return out
+
+
+@app.get("/api/slate")
+def slate():
+    """Everything the homepage shows, from one MLB scoreboard call:
+      - days[0]: the requested date's games (default today, US Eastern),
+      - days[1:]: when that's today, the next game days within a week (so
+        an off day still shows what's coming), up to SLATE_MAX_UPCOMING_DAYS,
+      - recent: the most recent earlier date with finished games ("last night").
+    Scores come straight from MLB (refreshed every minute); park, weather and
+    bullpen come from the site's own data for games it has pulled."""
+    today = _baseball_today()
+    day = request.args.get("date") or today
+    try:
+        d0 = date.fromisoformat(day)
+    except ValueError:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+    start = (d0 - timedelta(days=SLATE_DAYS_BACK)).isoformat()
+    end = (d0 + timedelta(days=SLATE_DAYS_AHEAD if day == today else 0)).isoformat()
+    try:
+        board = _scoreboard(start, end)
+    except Exception as exc:
+        print(f"[slate] scoreboard {start}..{end}: {exc}")
+        return jsonify({"error": "Couldn't reach MLB just now."}), 503
+    by_date: dict = {}
+    for g in board:
+        by_date.setdefault(g["date"], []).append(g)
+    dates = [day] + ([x for x in sorted(by_date) if x > day][:SLATE_MAX_UPCOMING_DAYS] if day == today else [])
+    days = []
+    for d in dates:
+        db_by_pk = {r["game_pk"]: r for r in _db_games(d)} if by_date.get(d) else {}
+        games_ = sorted(by_date.get(d, []), key=lambda g: (g["time"] or "", g["game_pk"]))
+        days.append({"date": d, "games": [_slate_game(g, db_by_pk) for g in games_]})
+    recent = None
+    for d in sorted((x for x in by_date if x < day), reverse=True):
+        finals = [g for g in by_date[d] if g["state"] == "final"]
+        if finals:
+            recent = {"date": d, "games": sorted(finals, key=lambda g: (g["time"] or "", g["game_pk"]))}
+            break
+    import ingest_daily
+    return jsonify({"today": today, "date": day, "days": days, "recent": recent,
+                    "days_ahead_pulled": ingest_daily.UPCOMING_DAYS})
 
 
 @app.get("/api/matchup")
@@ -621,7 +925,10 @@ def bullpen_route():
     game_date = request.args.get("date")
     if not team_id or not game_date:
         return jsonify({"error": "team and date query params are required, e.g. ?team=147&date=2026-10-02"}), 400
+    return jsonify(_bullpen_data(team_id, game_date))
 
+
+def _bullpen_data(team_id: int, game_date: str) -> dict:
     rows = _team_bullpen_rows(team_id, game_date)
     league_avg = _league_avg_weekly_reliever_pitches(game_date)
     fatigue = bullpen_module.compute_bullpen_fatigue(rows, game_date, league_avg)
@@ -642,12 +949,12 @@ def bullpen_route():
     team_rows = query_db("SELECT name FROM teams WHERE id = ?", (team_id,))
     team_name = team_rows[0]["name"] if team_rows else None
 
-    return jsonify({
+    return {
         "team": {"id": team_id, "name": team_name},
         "fatigue": fatigue,
         "relievers": relievers,
         "window_days": BULLPEN_WINDOW_DAYS,
-    })
+    }
 
 
 
@@ -942,9 +1249,15 @@ def compute_estimates(pitcher_id: int, opponent_team_id: int, game_date: str | N
     }
 
 
-# ---- Player / team pages and the game summary --------------------------
+# ---- Player / team pages ----------------------------------------------
 
 PAGE_CACHE_SECONDS = 60 * 60
+
+
+def _baseball_today() -> str:
+    """Today's date in US Eastern -- the baseball "today" (see ingest_daily)."""
+    import ingest_daily
+    return ingest_daily.baseball_today()
 
 
 def _league_ranks(season: int) -> dict:
@@ -1007,17 +1320,13 @@ def _h2h_line(batter_id: int, pitcher_id: int) -> dict | None:
     return pages.hit_line(c)
 
 
-@app.get("/api/player")
-def player_route():
-    """A player page. Hitters: last 3 seasons, this season vs LHP / RHP,
-    last 7 / 15 / 30 games, recent game log, and today's matchup (with his
-    history vs today's opposing starter). Pitchers: last 3 seasons, this
-    season vs LHH / RHH, last 5 starts (or relief outings), today's start.
-    Query: id, date."""
-    pid = request.args.get("id", type=int)
-    if not pid:
-        return jsonify({"error": "id query param is required"}), 400
-    game_date = request.args.get("date")
+def _player_data(pid: int, game_date: str) -> dict:
+    """Everything a player page shows (cached an hour). Hitters: last 3
+    seasons, this season vs LHP / RHP, last 7 / 15 / 30 games, recent game
+    log, today's matchup with his history vs today's opposing starter, and
+    the pitchers he's faced most. Pitchers: last 3 seasons, this season vs
+    LHH / RHH, last 5 starts (or relief outings), today's start, and the
+    hitters he's faced most."""
     season = _season_from(game_date)
 
     def build():
@@ -1029,7 +1338,7 @@ def player_route():
         out = {"id": pid, "name": p.get("fullName"), "number": p.get("primaryNumber"), "age": p.get("currentAge"),
                "position": pos.get("abbreviation"), "bats": (p.get("batSide") or {}).get("code"),
                "throws": (p.get("pitchHand") or {}).get("code"),
-               "team": {"id": team.get("id"), "name": team.get("name")},
+               "team": {"id": team.get("id"), "name": team.get("name"), "slug": slugs.team_slug(team.get("id"))},
                "kind": "pitcher" if is_pitcher else "hitter", "season": season}
         if is_pitcher:
             out["seasons"] = pages.by_season(mlb_api.get_year_by_year(pid, "pitching"), "pitching")
@@ -1056,24 +1365,30 @@ def player_route():
             today["h2h"] = _h2h_line(pid, today["opp_starter"]["id"])
             today["opp_starter"]["throws"] = _person(today["opp_starter"]["id"]).get("throws")
         out["today"] = today
+        out["matchups"] = _matchups_on_file(pid, is_pitcher)
         return out
 
+
+    return _cached(("player-page", pid, game_date), PAGE_CACHE_SECONDS, build)
+
+
+@app.get("/api/player")
+def player_route():
+    """JSON for a player page (see _player_data). Query: id, optional date."""
+    pid = request.args.get("id", type=int)
+    if not pid:
+        return jsonify({"error": "id query param is required"}), 400
     try:
-        return jsonify(_cached(("player-page", pid, game_date), PAGE_CACHE_SECONDS, build))
+        return jsonify(_player_data(pid, request.args.get("date") or _baseball_today()))
     except Exception as exc:
         print(f"[player page] {pid}: {exc}")
         return jsonify({"error": "Couldn't load this player from MLB right now."}), 502
 
 
-@app.get("/api/team")
-def team_route():
-    """A team page: hitting this season and vs LHP / RHP with MLB rank (by
-    OPS), today's game, home park factors, and the active roster.
-    Bullpen workload comes from /api/bullpen. Query: id, date."""
-    tid = request.args.get("id", type=int)
-    if not tid:
-        return jsonify({"error": "id query param is required"}), 400
-    game_date = request.args.get("date")
+def _team_data(tid: int, game_date: str) -> dict:
+    """Everything a team page shows (cached an hour): hitting this season
+    and vs LHP / RHP with MLB rank (by OPS) and the league line, today's
+    game, home park factors, bullpen workload, and the active roster."""
     season = _season_from(game_date)
 
     def build():
@@ -1091,7 +1406,7 @@ def team_route():
             "SELECT v.name, v.hr_factor, v.hit_factor, v.roof_type FROM games g JOIN venues v ON v.id = g.venue_id "
             "WHERE g.home_team_id = ? ORDER BY g.game_date DESC LIMIT 1", (tid,))
         return {
-            "id": tid, "name": name_rows[0]["name"] if name_rows else None, "season": season,
+            "id": tid, "name": name_rows[0]["name"] if name_rows else slugs.TEAMS.get(tid), "season": season,
             "hitting": {"season": lines["season"],
                         "L": lines["L"], "L_rank": ranks["L"].get(tid),
                         "R": lines["R"], "R_rank": ranks["R"].get(tid),
@@ -1101,50 +1416,121 @@ def team_route():
             "hitters": [{"id": p["id"], "name": p["full_name"], "position": p.get("position_abbr")}
                         for p in roster if p["position_type"] != "Pitcher"],
             "pitchers": [{"id": p["id"], "name": p["full_name"]} for p in roster if p["position_type"] == "Pitcher"],
+            "bullpen": _bullpen_data(tid, game_date),
         }
 
+
+    return _cached(("team-page", tid, game_date), PAGE_CACHE_SECONDS, build)
+
+
+@app.get("/api/team")
+def team_route():
+    """JSON for a team page (see _team_data). Query: id or slug, optional date."""
+    tid = request.args.get("id", type=int) or slugs.team_id_from_slug(request.args.get("slug") or "")
+    if not tid:
+        return jsonify({"error": "id (or slug) query param is required"}), 400
     try:
-        return jsonify(_cached(("team-page", tid, game_date), PAGE_CACHE_SECONDS, build))
+        return jsonify(_team_data(tid, request.args.get("date") or _baseball_today()))
     except Exception as exc:
         print(f"[team page] {tid}: {exc}")
         return jsonify({"error": "Couldn't load this team from MLB right now."}), 502
 
 
-@app.get("/api/summary")
-def summary_route():
-    """Game summary: each lineup's season hitting vs the opposing starter's
-    throwing hand, with its MLB rank (by OPS) and the league line for
-    comparison. (Starters, bullpens, park and weather come from the data the
-    game page already loads.) Query: game, date."""
-    game_pk = request.args.get("game", type=int)
-    game_date = request.args.get("date")
-    if not game_pk:
-        return jsonify({"error": "game query param is required"}), 400
-    season = _season_from(game_date)
-    g = query_db("SELECT home_team_id, away_team_id, home_probable_pitcher_id, away_probable_pitcher_id "
-                 "FROM games WHERE game_pk = ?", (game_pk,))
-    if not g:
-        return jsonify({"error": "unknown game"}), 404
-    g = g[0]
-    try:
-        ranks = _league_ranks(season)
-        out = {"season": season, "teams": ranks["teams"]["L"], "sides": {}}
-        for side, team_id, opp_pitcher in (("away", g["away_team_id"], g["home_probable_pitcher_id"]),
-                                           ("home", g["home_team_id"], g["away_probable_pitcher_id"])):
-            throws = _person(opp_pitcher).get("throws") if opp_pitcher else None
-            lines = _team_lines(team_id, season)
-            out["sides"][side] = {
-                "team_id": team_id, "vs": throws,
-                "line": lines.get(throws) if throws else None,
-                "rank": ranks[throws].get(team_id) if throws else None,
-                "league": ranks["league"].get(throws) if throws else None,
-                "season_line": lines["season"],
-            }
-        return jsonify(out)
-    except Exception as exc:
-        print(f"[summary] game {game_pk}: {exc}")
-        return jsonify({"error": "Couldn't load team splits from MLB right now."}), 502
+def _career_counts(r: dict) -> dict:
+    """matchup_career / matchup_season row -> pages.hit_line counts."""
+    c = {"pa": r.get("plate_appearances") or 0, "ab": r.get("at_bats") or 0, "h": r.get("hits") or 0,
+         "d2": r.get("doubles") or 0, "d3": r.get("triples") or 0, "hr": r.get("home_runs") or 0,
+         "bb": r.get("base_on_balls") or 0, "hbp": r.get("hit_by_pitch") or 0, "so": r.get("strike_outs") or 0,
+         "sf": r.get("sac_flies") or 0, "rbi": r.get("rbi") or 0, "sb": 0, "g": r.get("games_played")}
+    c["tb"] = r.get("total_bases") if r.get("total_bases") is not None else (
+        c["h"] + c["d2"] + 2 * c["d3"] + 3 * c["hr"])
+    return c
 
+
+def _matchups_on_file(pid: int, is_pitcher: bool, limit: int = 10) -> list[dict]:
+    """The opponents this player has faced most, among the batter-vs-pitcher
+    histories this site has stored (each links to its batter-vs-pitcher page)."""
+    if is_pitcher:
+        rows = query_db("SELECT m.*, p.full_name AS other_name, m.batter_id AS other_id FROM matchup_career m "
+                        "JOIN players p ON p.id = m.batter_id WHERE m.pitcher_id = ? "
+                        "ORDER BY m.plate_appearances DESC LIMIT ?", (pid, limit))
+    else:
+        rows = query_db("SELECT m.*, p.full_name AS other_name, m.pitcher_id AS other_id FROM matchup_career m "
+                        "JOIN players p ON p.id = m.pitcher_id WHERE m.batter_id = ? "
+                        "ORDER BY m.plate_appearances DESC LIMIT ?", (pid, limit))
+    out = []
+    for r in rows:
+        line = pages.hit_line(_career_counts(r))
+        if not line:
+            continue
+        bid, ptid = (r["other_id"], pid) if is_pitcher else (pid, r["other_id"])
+        out.append({"id": r["other_id"], "name": r["other_name"], "line": line, "batter_id": bid, "pitcher_id": ptid})
+    return out
+
+
+def _person_page_info(pid: int) -> dict:
+    return _cached(("person-page", pid), PAGE_CACHE_SECONDS,
+                   lambda: (mlb_api.get_person_page(pid).get("people") or [{}])[0])
+
+
+def _matchup_data(bid: int, pid: int, game_date: str) -> dict:
+    """A batter-vs-pitcher page: career line and season by season (MLB's
+    own vsPlayer numbers, regular season), each player's season split vs
+    the other's hand, the site's projection when they've barely met (fewer
+    than 5 at-bats, like the Plate Projection), and today's game if they're
+    set to face each other."""
+    season = _season_from(game_date)
+
+    def build():
+        b, p = _person_page_info(bid), _person_page_info(pid)
+        bats = (b.get("batSide") or {}).get("code")
+        throws = (p.get("pitchHand") or {}).get("code")
+        side = matchup_estimate.facing_side(bats, throws) if throws in ("L", "R") else None
+        raw = mlb_api.get_vs_player(bid, pid)
+        career, seasons = None, []
+        for block in raw.get("stats") or []:
+            kind = (block.get("type") or {}).get("displayName")
+            for sp in block.get("splits") or []:
+                line = pages.hit_line(pages.hit_counts(sp.get("stat")))
+                if not line:
+                    continue
+                if kind == "vsPlayerTotal":
+                    career = line
+                elif kind == "vsPlayer":
+                    seasons.append({"season": sp.get("season"), "team": (sp.get("team") or {}).get("name"),
+                                    "line": line})
+        seasons.sort(key=lambda r: r["season"] or "", reverse=True)
+        b_vs = pages.vs_hand((mlb_api.get_hitters_vs_hand([bid], season, "vl,vr").get("people") or [{}])[0], "hitting")
+        p_vs = pages.vs_hand(mlb_api.get_pitcher_vs_hand(pid, season), "pitching")
+        b_team = (b.get("currentTeam") or {})
+        p_team = (p.get("currentTeam") or {})
+        out = {
+            "batter": {"id": bid, "name": b.get("fullName"), "bats": bats, "position": (b.get("primaryPosition") or {}).get("abbreviation"),
+                       "team": {"id": b_team.get("id"), "name": b_team.get("name")}},
+            "pitcher": {"id": pid, "name": p.get("fullName"), "throws": throws,
+                        "team": {"id": p_team.get("id"), "name": p_team.get("name")}},
+            "season": season, "career": career, "seasons": seasons,
+            "batter_vs_hand": b_vs.get(throws) if throws in ("L", "R") else None,
+            "pitcher_vs_side": p_vs.get(side) if side else None, "side": side,
+            "projection": None, "today": None,
+        }
+        # Today: his team plays hers and she's the probable starter.
+        t = _team_game_today(b_team.get("id"), game_date)
+        if t and t["opp_starter"]["id"] == pid:
+            out["today"] = t
+        # Projection, only when they've barely met (same rule as the Plate Projection).
+        if (career is None or (career["ab"] or 0) < 5) and b_team.get("id") and p_team.get("id") \
+                and b_team.get("id") != p_team.get("id"):
+            try:
+                est = compute_estimates(pid, b_team["id"], game_date, t["game_pk"] if out["today"] else None)
+                row = next((r for r in est["rows"] if r["id"] == bid), None)
+                if row:
+                    out["projection"] = row["est"]
+            except Exception as exc:
+                print(f"[bvp page] projection {bid} vs {pid}: {exc}")
+        return out
+
+    return _cached(("matchup-page", bid, pid, game_date), PAGE_CACHE_SECONDS, build)
 
 
 def snapshot_pregame_projections(game_date: str, now_utc=None, horizon_hours: float = 3.0) -> int:

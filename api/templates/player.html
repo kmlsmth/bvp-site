@@ -1,0 +1,81 @@
+{% import "_macros.html" as m %}
+{{ m.back() }}
+<article class="pg">
+  <header class="matchup-card pg-head">
+    <h1 class="matchup-team-name">{{ p.name }}</h1>
+    <div class="matchup-sub">{% if p.number %}#{{ p.number }} &middot; {% endif %}{% if p.position %}{{ p.position }} &middot; {% endif %}Bats {{ p.bats or '–' }} / Throws {{ p.throws or '–' }}{% if p.age %} &middot; Age {{ p.age }}{% endif %}</div>
+    {% if p.team and p.team.id %}<div class="matchup-sub"><a class="plink" href="{{ p.team.id|team_url }}">{{ p.team.name }}</a></div>{% endif %}
+  </header>
+
+  {% set t = p.today %}
+  {% if t %}
+  <div class="pg-today"><span class="pg-today-k">Today</span> {{ 'vs' if t.is_home else '@' }} {{ t.opponent }}
+    <span class="pg-today-d">
+    {% if p.kind == 'hitter' %}
+      {% if t.opp_starter and t.opp_starter.id %}
+        Facing <a class="plink" href="{{ (t.opp_starter.id, t.opp_starter.name)|player_url }}">{{ t.opp_starter.name }}</a>{% if t.opp_starter.throws %} ({{ 'LHP' if t.opp_starter.throws == 'L' else 'RHP' }}){% endif %} &middot;
+        <a class="plink" href="{{ (p.id, p.name, t.opp_starter.id, t.opp_starter.name)|bvp_url }}">{% if t.h2h %}{{ t.h2h.h }}-for-{{ t.h2h.ab }}{% if t.h2h.hr %}, {{ t.h2h.hr }} HR{% endif %} career vs him{% else %}never faced him{% endif %}</a>
+      {% else %}Opposing starter not announced yet{% endif %}
+    {% else %}
+      {% if t.own_starter and t.own_starter.id == p.id %}Probable starter today{% elif t.own_starter and t.own_starter.name %}Not starting ({{ t.own_starter.name }} is){% endif %}
+    {% endif %}
+    </span>
+    <a class="pg-today-go" href="/#/game/{{ t.date }}/{{ t.game_pk }}{% if p.kind == 'hitter' and t.opp_starter and t.opp_starter.id %}/{{ t.opp_starter.id }}{% endif %}">Game page &rarr;</a>
+  </div>
+  {% endif %}
+
+  {% if p.kind == 'hitter' %}
+    {% call m.card("Last 3 seasons", "Regular season." ~ (" * Played for more than one team." if p.seasons|multi_team else "")) %}
+      {{ m.table(m.HIT_COLS, p.seasons|map("season_row")|list) }}
+    {% endcall %}
+    {% call m.card(p.season ~ " vs LHP / RHP", "Regular season.") %}
+      {{ m.table(m.HIT_COLS, [("vs LHP", p.vs_hand.L, none), ("vs RHP", p.vs_hand.R, none)]) }}
+    {% endcall %}
+    {% if p.recent %}
+    {% call m.card("Recent form", "His last " ~ (p.recent|map(attribute="games")|join(" / ")) ~ " games, including the postseason (" ~ (p.recent[-1].from|shortday) ~ " – " ~ (p.recent[0].to|shortday) ~ ").") %}
+      {{ m.table(m.HIT_COLS, p.recent|map("recent_row")|list) }}
+    {% endcall %}
+    {% endif %}
+    {% if p.game_log %}
+    {% call m.card("Game log", "Last 10 games. P = postseason.") %}
+      <div class="table-scroll pg-scroll"><table class="pg-table">
+        <thead><tr><th></th><th>Opp</th><th>AB</th><th>H</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>BB</th><th>K</th></tr></thead>
+        <tbody>{% for g in p.game_log %}
+          <tr><td>{{ g.date|shortday }}{% if g.postseason %}<span class="pg-post">P</span>{% endif %}</td><td>{{ 'vs' if g.is_home else '@' }} {{ g.opponent|nickname }}</td>
+          <td>{{ g.ab }}</td><td>{{ g.h }}</td><td>{{ g.d2 }}</td><td>{{ g.d3 }}</td><td>{{ g.hr }}</td><td>{{ g.rbi }}</td><td>{{ g.bb }}</td><td>{{ g.so }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% endcall %}
+    {% endif %}
+  {% else %}
+    {% call m.card("Last 3 seasons", "Regular season.") %}
+      {{ m.table([("GS", "gs"), ("IP", "ip"), ("ERA", "era"), ("WHIP", "whip"), ("K/9", "k9"), ("BB/9", "bb9"), ("HR/9", "hr9")], p.seasons|map("season_row")|list) }}
+    {% endcall %}
+    {% call m.card(p.season ~ " vs LHH / RHH", "What hitters have done against him, regular season.") %}
+      {{ m.table([("BF", "bf"), ("AVG", "avg"), ("OBP", "obp"), ("SLG", "slg"), ("OPS", "ops"), ("K%", "k_pct"), ("BB%", "bb_pct")], [("vs LHH", p.vs_hand.L, none), ("vs RHH", p.vs_hand.R, none)]) }}
+    {% endcall %}
+    {% if p.recent %}
+    {% call m.card(("Last " ~ p.recent|length ~ (" starts" if p.role == "starter" else " outings")), "Including the postseason. P = postseason.") %}
+      <div class="table-scroll pg-scroll"><table class="pg-table">
+        <thead><tr><th></th><th>Opp</th><th>IP</th><th>H</th><th>ER</th><th>BB</th><th>K</th><th>Pit</th></tr></thead>
+        <tbody>{% for g in p.recent %}
+          <tr><td>{{ g.date|shortday }}{% if g.postseason %}<span class="pg-post">P</span>{% endif %}</td><td>{{ 'vs' if g.is_home else '@' }} {{ g.opponent|nickname }}</td>
+          <td>{{ g.ip }}</td><td>{{ m.v(g.h) }}</td><td>{{ m.v(g.er) }}</td><td>{{ m.v(g.bb) }}</td><td>{{ m.v(g.so) }}</td><td>{{ m.v(g.pitches) }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% endcall %}
+    {% endif %}
+  {% endif %}
+
+  {% if p.matchups %}
+  {% call m.card(("Pitchers he's faced most" if p.kind == 'hitter' else "Hitters he's faced most"), "Career, regular season. Tap one for the full matchup.") %}
+    <div class="table-scroll pg-scroll"><table class="pg-table">
+      <thead><tr><th></th><th>PA</th><th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th><th>HR</th></tr></thead>
+      <tbody>{% for x in p.matchups %}
+        <tr><td><a class="plink" href="{{ (x.batter_id, (p.name if p.kind == 'hitter' else x.name), x.pitcher_id, (x.name if p.kind == 'hitter' else p.name))|bvp_url }}">{{ x.name }}</a></td>
+        <td>{{ x.line.pa }}</td><td>{{ x.line.avg }}</td><td>{{ x.line.obp }}</td><td>{{ x.line.slg }}</td><td>{{ x.line.ops }}</td><td>{{ x.line.hr }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  {% endcall %}
+  {% endif %}
+</article>

@@ -1,0 +1,19 @@
+<article class="pg">
+  <header class="pg-hero">
+    <div class="eyebrow">MLB</div>
+    <h1>All 30 teams</h1>
+    <p class="sub">Team hitting vs left- and right-handed pitching, bullpen workload, home park and roster.</p>
+  </header>
+  <div class="teams-grid">
+  {% for league, division, ids in divisions %}
+    <section class="pg-card teams-div">
+      <h2 class="pg-title">{{ division }}</h2>
+      <ul>
+      {% for tid in ids %}
+        <li><a href="{{ tid|team_url }}"><span class="abbr-chip">{{ abbr[tid] }}</span>{{ teams[tid] }}</a></li>
+      {% endfor %}
+      </ul>
+    </section>
+  {% endfor %}
+  </div>
+</article>

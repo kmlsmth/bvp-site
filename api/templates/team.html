@@ -1,0 +1,43 @@
+{% import "_macros.html" as m %}
+{{ m.back() }}
+<article class="pg">
+  <header class="matchup-card pg-head"><h1 class="matchup-team-name">{{ t.name }}</h1></header>
+  {% set g = t.today %}
+  {% if g %}
+  <div class="pg-today"><span class="pg-today-k">Today</span> {{ 'vs' if g.is_home else '@' }} {{ g.opponent }}
+    <span class="pg-today-d">{% if g.own_starter and g.own_starter.id %}<a class="plink" href="{{ (g.own_starter.id, g.own_starter.name)|player_url }}">{{ g.own_starter.name }}</a>{% else %}TBA{% endif %} vs
+      {% if g.opp_starter and g.opp_starter.id %}<a class="plink" href="{{ (g.opp_starter.id, g.opp_starter.name)|player_url }}">{{ g.opp_starter.name }}</a>{% else %}TBA{% endif %}</span>
+    <a class="pg-today-go" href="/#/game/{{ g.date }}/{{ g.game_pk }}">Game page &rarr;</a>
+  </div>
+  {% endif %}
+  {% set h = t.hitting %}
+  {% call m.card(t.season ~ " hitting", "Regular season. Rank = by OPS, of all " ~ h.teams ~ " teams; MLB rows are the league average.") %}
+    {{ m.table([("AVG", "avg"), ("OBP", "obp"), ("SLG", "slg"), ("OPS", "ops"), ("HR", "hr"), ("K%", "k_pct"), ("Rank", "rank")],
+       [("Season", h.season, none), ("vs LHP", h.L|with_rank(h.L_rank), none), ("vs RHP", h.R|with_rank(h.R_rank), none),
+        ("MLB vs LHP", h.league.L|league_row, "pg-lg"), ("MLB vs RHP", h.league.R|league_row, "pg-lg")]) }}
+  {% endcall %}
+  {% if t.park %}
+  {% call m.card("Home park", "Park factors: 100 = league average.") %}
+    <div class="pg-park"><strong>{{ t.park.name }}</strong>{% if t.park.hr_factor is not none %} &middot; HR factor {{ t.park.hr_factor }}{% endif %}{% if t.park.hit_factor is not none %} &middot; Hit factor {{ t.park.hit_factor }}{% endif %}{% if t.park.roof_type %} &middot; {{ t.park.roof_type }}{% endif %}</div>
+  {% endcall %}
+  {% endif %}
+  {% set bp = t.bullpen %}
+  {% if bp %}
+  {% call m.card("Bullpen", "Relief appearances over the last " ~ bp.window_days ~ " days.") %}
+    <div class="pg-park"><span class="pg-pen {{ bp.fatigue.label|fatigue_class }}"><span class="dot"></span>{{ bp.fatigue.label }} {{ bp.fatigue.score }}</span>
+      &middot; {{ bp.fatigue.weekly_pitches }} pitches &middot; {{ bp.fatigue.relievers_used }} relievers used</div>
+    {% if bp.relievers %}
+    <div class="table-scroll pg-scroll" style="margin-top:8px"><table class="pg-table">
+      <thead><tr><th></th><th>Apps</th><th>Pitches</th><th>Last</th></tr></thead>
+      <tbody>{% for r in bp.relievers %}<tr><td><a class="plink" href="{{ (r.id, r.name)|player_url }}">{{ r.name }}</a></td><td>{{ r.appearances }}</td><td>{{ r.pitches }}</td><td>{{ r.last_appearance|shortday if r.last_appearance else '–' }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+  {% endcall %}
+  {% endif %}
+  {% call m.card("Active roster") %}
+    <div class="pg-roster">
+      <div><div class="pg-sub">Hitters</div><ul>{% for x in t.hitters %}<li><span class="lineup-pos">{{ x.position or '' }}</span><a class="plink" href="{{ (x.id, x.name)|player_url }}">{{ x.name }}</a></li>{% endfor %}</ul></div>
+      <div><div class="pg-sub">Pitchers</div><ul>{% for x in t.pitchers %}<li><a class="plink" href="{{ (x.id, x.name)|player_url }}">{{ x.name }}</a></li>{% endfor %}</ul></div>
+    </div>
+  {% endcall %}
+</article>

@@ -456,3 +456,57 @@ def parse_schedule_finals(raw: dict) -> list[dict]:
                             "game_date": g.get("officialDate") or d.get("date"),
                             "game_type": g.get("gameType")})
     return out
+
+
+def parse_scoreboard(raw: dict) -> list[dict]:
+    """get_scoreboard -> one row per game (oldest first): status, score,
+    inning, probables, venue and, for the postseason, the series line.
+    Postponed / cancelled games are kept, flagged by state."""
+    out = []
+    for block in (raw or {}).get("dates") or []:
+        for g in block.get("games") or []:
+            st = g.get("status") or {}
+            abstract = st.get("abstractGameState")          # Preview / Live / Final
+            coded = st.get("codedGameState")
+            detailed = st.get("detailedState") or ""
+            if coded in ("D", "C") or detailed in ("Postponed", "Cancelled", "Suspended"):
+                state = "postponed"
+            elif abstract == "Final":
+                state = "final"
+            elif abstract == "Live" and detailed not in ("Warmup", "Pre-Game", "Delayed Start"):
+                state = "live"
+            else:
+                state = "scheduled"
+            ls = g.get("linescore") or {}
+            teams = {}
+            for side in ("away", "home"):
+                t = (g.get("teams") or {}).get(side) or {}
+                team = t.get("team") or {}
+                rec = t.get("leagueRecord") or {}
+                pp = t.get("probablePitcher") or {}
+                teams[side] = {"id": team.get("id"), "name": team.get("name"),
+                               "abbr": team.get("abbreviation"), "short": team.get("clubName") or team.get("teamName"),
+                               "score": t.get("score"), "winner": bool(t.get("isWinner")),
+                               "wins": rec.get("wins"), "losses": rec.get("losses"),
+                               "probable": {"id": pp.get("id"), "name": pp.get("fullName")} if pp.get("id") else None}
+            series = None
+            if g.get("gameType") not in (None, "R", "S", "E") and g.get("seriesDescription"):
+                ss = g.get("seriesStatus") or {}
+                label = g["seriesDescription"]
+                if g.get("seriesGameNumber"):
+                    label += f" · Game {g['seriesGameNumber']}"
+                series = {"label": label, "result": ss.get("result"),
+                          "if_necessary": g.get("ifNecessary") == "Y"}
+            venue = g.get("venue") or {}
+            out.append({
+                "game_pk": g.get("gamePk"), "date": g.get("officialDate") or block.get("date"),
+                "time": g.get("gameDate"), "time_tbd": bool(st.get("startTimeTBD")),
+                "game_type": g.get("gameType"), "state": state, "status": detailed,
+                "inning": {"ordinal": ls.get("currentInningOrdinal"), "half": ls.get("inningState"),
+                           "outs": ls.get("outs")} if state == "live" else None,
+                "innings": len(ls.get("innings") or []) if state == "final" else None,
+                "away": teams["away"], "home": teams["home"],
+                "venue": {"id": venue.get("id"), "name": venue.get("name")},
+                "series": series,
+            })
+    return out

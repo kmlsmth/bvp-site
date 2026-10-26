@@ -77,6 +77,13 @@ def _hourly(today: str) -> None:
     # here). See ingest_daily.refresh_probable_pitchers for why this
     # is a separate, cheap pass rather than folded into ingest_date.
     ingest_daily.refresh_probable_pitchers(today)
+    # The next few days too, so upcoming games (and their matchup data)
+    # are on the site ahead of time. Has its own error handling.
+    try:
+        ingest_daily.refresh_upcoming(today)
+    except Exception:
+        print("[scheduler] upcoming days failed:")
+        traceback.print_exc()
 
 
 def start(on_tick=None, on_hourly=None) -> None:

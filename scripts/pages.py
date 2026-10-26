@@ -1,5 +1,5 @@
 """
-Player / team pages and the game summary: pure functions over MLB Stats
+Player / team pages: pure functions over MLB Stats
 API responses (no network -- see test_pages.py, which runs on real
 responses). Rate stats are always recomputed from counting stats, so a
 traded player's two team rows add up correctly.

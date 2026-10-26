@@ -1,0 +1,43 @@
+{% import "_macros.html" as m %}
+{{ m.back() }}
+<article class="pg">
+  <header class="matchup-card pg-head">
+    <h1 class="matchup-teams"><span class="matchup-team-name"><a class="plink" href="{{ (x.batter.id, x.batter.name)|player_url }}">{{ x.batter.name }}</a></span>
+      <span class="matchup-at">vs</span>
+      <span class="matchup-team-name"><a class="plink" href="{{ (x.pitcher.id, x.pitcher.name)|player_url }}">{{ x.pitcher.name }}</a></span></h1>
+    <div class="matchup-sub">{{ x.batter.position or 'Hitter' }}{% if x.batter.team.name %}, {{ x.batter.team.name }}{% endif %} (bats {{ x.batter.bats or '–' }})
+      &middot; {{ 'LHP' if x.pitcher.throws == 'L' else 'RHP' if x.pitcher.throws == 'R' else 'Pitcher' }}{% if x.pitcher.team.name %}, {{ x.pitcher.team.name }}{% endif %}</div>
+  </header>
+
+  <p class="pg-lede">{{ x|matchup_sentence }}</p>
+
+  {% if x.today %}
+  <div class="pg-today"><span class="pg-today-k">Today</span> {{ x.batter.team.name }} {{ 'vs' if x.today.is_home else '@' }} {{ x.today.opponent }}
+    <span class="pg-today-d">{{ x.pitcher.name }} is the probable starter.</span>
+    <a class="pg-today-go" href="/#/game/{{ x.today.date }}/{{ x.today.game_pk }}/{{ x.pitcher.id }}">Game page &rarr;</a>
+  </div>
+  {% endif %}
+
+  {% if x.career %}
+  {% call m.card("Career head-to-head", "Regular season, from MLB.") %}
+    {% set cols = [("PA", "pa"), ("H", "h"), ("HR", "hr"), ("K", "so"), ("AVG", "avg"), ("OBP", "obp"), ("SLG", "slg"), ("OPS", "ops")] %}
+    {{ m.table(cols, [("Career", x.career, none)] + x.seasons|map("season_row")|list) }}
+  {% endcall %}
+  {% endif %}
+
+  {% if x.projection %}
+  {% call m.card("Plate Projection", "Estimated, because they have little or no history against each other (fewer than 5 at-bats).") %}
+    <div class="table-scroll pg-scroll"><table class="pg-table">
+      <thead><tr><th></th><th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>{% if x.today %}<th>1+ H</th><th>1+ HR</th>{% endif %}</tr></thead>
+      <tbody><tr><td>Projected</td><td>{{ x.projection.avg }}</td><td>{{ x.projection.obp }}</td><td>{{ x.projection.slg }}</td><td>{{ x.projection.ops }}</td>
+        {% if x.today %}<td>{{ x.projection.hit_tonight }}</td><td>{{ x.projection.hr_tonight }}</td>{% endif %}</tr></tbody>
+    </table></div>
+  {% endcall %}
+  {% endif %}
+
+  {% call m.card(x.season ~ " splits", "Regular season.") %}
+    {{ m.table([("PA", "pa"), ("AVG", "avg"), ("OBP", "obp"), ("SLG", "slg"), ("OPS", "ops"), ("K%", "k_pct")],
+       [(x.batter.name|lastname ~ " vs " ~ ('LHP' if x.pitcher.throws == 'L' else 'RHP'), x.batter_vs_hand, none),
+        (x.pitcher.name|lastname ~ " vs " ~ ('LHH' if x.side == 'L' else 'RHH'), x.pitcher_vs_side|bf_as_pa, none)]) }}
+  {% endcall %}
+</article>

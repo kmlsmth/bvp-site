@@ -498,6 +498,12 @@ def parse_scoreboard(raw: dict) -> list[dict]:
                 series = {"label": label, "result": ss.get("result"),
                           "if_necessary": g.get("ifNecessary") == "Y"}
             venue = g.get("venue") or {}
+            lt = ls.get("teams") or {}
+            rhe = {side: {k: (lt.get(side) or {}).get(k) for k in ("runs", "hits", "errors")}
+                   for side in ("away", "home")} if state in ("live", "final") else None
+            dec = g.get("decisions") or {}
+            decisions = {k: {"id": (dec.get(k) or {}).get("id"), "name": (dec.get(k) or {}).get("fullName")}
+                         for k in ("winner", "loser", "save") if (dec.get(k) or {}).get("id")} or None
             out.append({
                 "game_pk": g.get("gamePk"), "date": g.get("officialDate") or block.get("date"),
                 "time": g.get("gameDate"), "time_tbd": bool(st.get("startTimeTBD")),
@@ -507,6 +513,7 @@ def parse_scoreboard(raw: dict) -> list[dict]:
                 "innings": len(ls.get("innings") or []) if state == "final" else None,
                 "away": teams["away"], "home": teams["home"],
                 "venue": {"id": venue.get("id"), "name": venue.get("name")},
-                "series": series,
+                "series": series, "series_game": g.get("seriesGameNumber"),
+                "rhe": rhe, "decisions": decisions,
             })
     return out

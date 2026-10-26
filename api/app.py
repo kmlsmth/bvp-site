@@ -581,6 +581,37 @@ def _slate_game(g: dict, db_by_pk: dict) -> dict:
     return out
 
 
+@app.get("/api/series")
+def series_route():
+    """A postseason game's series: every game between the two teams in this
+    round (MLB schedule, by game type), oldest first, with scores, R/H/E
+    and W/L/S pitchers; `ready` = the game page has data. Regular-season
+    games get an empty list."""
+    pk = request.args.get("game", type=int)
+    if not pk:
+        return jsonify({"error": "game query param (gamePk) is required"}), 400
+    rows = query_db("SELECT game_pk, game_date, game_type, home_team_id, away_team_id FROM games WHERE game_pk = ?", (pk,))
+    if not rows:
+        return jsonify({"error": "unknown game"}), 404
+    g = rows[0]
+    if g["game_type"] in (None, "R", "S", "E", "A") or not g["home_team_id"] or not g["away_team_id"]:
+        return jsonify({"game": pk, "games": []})
+    season = (g["game_date"] or "")[:4]
+    try:
+        games_ = _cached(("series", g["home_team_id"], g["away_team_id"], season, g["game_type"]),
+                         SCOREBOARD_CACHE_SECONDS,
+                         lambda: parsing.parse_scoreboard(mlb_api.get_series_games(
+                             g["home_team_id"], g["away_team_id"], season, g["game_type"])))
+    except Exception as exc:
+        print(f"[series] game {pk}: {exc}")
+        return jsonify({"error": "Couldn't reach MLB just now."}), 503
+    pks = [x["game_pk"] for x in games_]
+    stored = {r["game_pk"] for r in query_db(
+        f"SELECT game_pk FROM games WHERE game_pk IN ({','.join('?' * len(pks))})", tuple(pks))} if pks else set()
+    return jsonify({"game": pk, "games": [dict(x, ready=x["game_pk"] in stored, current=x["game_pk"] == pk)
+                                          for x in games_]})
+
+
 @app.get("/api/slate")
 def slate():
     """Everything the homepage shows, from one MLB scoreboard call:

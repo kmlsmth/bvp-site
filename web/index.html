@@ -215,6 +215,23 @@
   .matchup-teams { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 0; }
   .matchup-team-name { font-family: var(--font-display); font-weight: 600; font-size: 23px; line-height: 1.15; text-wrap: balance; }
   .matchup-at { font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 15px; color: var(--muted); flex-shrink: 0; }
+  .series-sec { display: flex; flex-direction: column; gap: 10px; }
+  .series-sec .section-label { margin-bottom: 0; }
+  .series-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .sg { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .sg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .sg-game { font-family: var(--font-display); font-weight: 600; font-size: 15.5px; }
+  .sg-date { font-size: 12px; color: var(--muted); text-align: right; }
+  .sg-line { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .sg-line th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; text-align: right; padding: 0 0 4px 10px; width: 30px; }
+  .sg-line td { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; padding: 3px 0 3px 10px; color: var(--muted); }
+  .sg-line td:first-child { text-align: left; font-family: var(--font-body); padding-left: 0; }
+  .sg-line td:first-child .abbr-chip { min-width: 38px; font-size: 11px; margin-right: 8px; padding: 3px 5px; }
+  .sg-line tr.win td { color: var(--ink); font-weight: 600; }
+  .sg-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+  .sg-foot .plink { color: var(--ink); }
+  .sg-go { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .matchup-series { font-size: 13.5px; font-weight: 600; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
   .matchup-time { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); margin-top: 12px; }
   .matchup-sub { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
   @media (max-width: 480px) {
@@ -913,6 +930,12 @@
     '</div>';
   }
 
+  // "World Series · Game 3 (MIL leads 2-0)" -- the series score as MLB
+  // reports it (after the game, for a finished one).
+  function seriesText(sr) {
+    return sr.label + (sr.result ? " (" + sr.result + ")" : "");
+  }
+
   function gameCard(g, daysAhead, withDay) {
     var when, cls = "gc-when";
     if (g.state === "live") { when = (g.inning && g.inning.ordinal) ? escapeHtml((g.inning.half || "") + " " + g.inning.ordinal) : "Live"; cls += " live"; }
@@ -920,7 +943,7 @@
     else if (g.state === "postponed") { when = escapeHtml(g.status || "Postponed"); }
     else { when = g.time_tbd ? "Time TBD" : startTimes(g.time); }
     if (withDay) when = escapeHtml(etDate(g.date, { weekday: "short", month: "numeric", day: "numeric" })) + " · " + when;
-    var series = g.series ? escapeHtml(g.series.label) : "";
+    var series = g.series ? escapeHtml(seriesText(g.series)) : "";
 
     var meta = [];
     if (g.venue && g.venue.name) meta.push(escapeHtml(g.venue.name));
@@ -944,8 +967,6 @@
         tag = (g.lineups.away && g.lineups.home) ? '<span class="gc-tag">Lineups posted</span>'
           : (g.lineups.away || g.lineups.home) ? '<span class="gc-tag">1 lineup posted</span>' : "";
       }
-      if (g.series && g.series.result && g.state !== "final") tag = tag || '<span class="gc-note">' + escapeHtml(g.series.result) + '</span>';
-      if (g.state === "final" && g.series && g.series.result) tag = '<span class="gc-note">' + escapeHtml(g.series.result) + '</span>';
       foot = '<div class="gc-foot">' + (tag || "<span></span>") + '<span class="gc-go">Matchups &rarr;</span></div>';
     } else {
       foot = '<div class="gc-foot"><span class="gc-note">' +
@@ -983,7 +1004,7 @@
           teamLink(t.id, t.short || t.name) + '</span><span class="sb-score">' + (t.score === null || t.score === undefined ? "–" : t.score) + '</span></div>';
       });
       var note = ["Final" + (g.innings && g.innings > 9 ? "/" + g.innings : "")];
-      if (g.series) { note.push(g.series.label); if (g.series.result) note.push(g.series.result); }
+      if (g.series) note.push(seriesText(g.series));
       html += '<div class="sb-note">' + escapeHtml(note.join(" · ")) + '</div></div>';
     });
     return el(html + '</section>');
@@ -1121,8 +1142,31 @@
         '</h1>' +
         (gameTime ? '<div class="matchup-time">' + gameTime + '</div>' : "") +
         '<div class="matchup-sub">' + pitchersLineText(game) + ' &middot; ' + escapeHtml(game.venue_name || "Venue TBD") + '</div>' +
+        '<div class="matchup-series" hidden></div>' +
       '</div>'
     ));
+    // Postseason: the series and its score; live or final: the score. From
+    // MLB's scoreboard (the same call the homepage uses, cached a minute).
+    var seriesHost = app.querySelector(".matchup-series");
+    fetchSlate(game.game_date).then(function (d) {
+      var g = null;
+      (d.days || []).forEach(function (day) { day.games.forEach(function (x) { if (x.game_pk === game.game_pk) g = x; }); });
+      if (!g || !seriesHost) return;
+      var parts = [];
+      if (g.state === "live" || g.state === "final") {
+        var st = g.state === "final" ? "Final" + (g.innings && g.innings > 9 ? "/" + g.innings : "")
+          : ((g.inning && g.inning.ordinal) ? (g.inning.half || "") + " " + g.inning.ordinal : "Live");
+        parts.push((g.away.abbr || "") + " " + g.away.score + ", " + (g.home.abbr || "") + " " + g.home.score + " · " + st);
+      }
+      if (g.series) parts.push(seriesText(g.series));
+      if (!parts.length) return;
+      seriesHost.innerHTML = parts.map(function (t) { return "<div>" + escapeHtml(t) + "</div>"; }).join("");
+      seriesHost.hidden = false;
+    }).catch(function () {});
+
+    var seriesSec = el('<div class="series-sec" hidden></div>');
+    app.appendChild(seriesSec);
+    loadSeriesSoFar(game, seriesSec);
 
     app.appendChild(el('<div class="section-label">Starting Pitchers</div>'));
     app.appendChild(renderStarterCards(game));
@@ -1140,6 +1184,47 @@
     app.appendChild(renderBullpenSection(game));
 
     app.appendChild(el('<p class="tabs-note">More planned here — lineup confirmations and market data.</p>'));
+  }
+
+  // ---- Postseason: the earlier games of this series ----
+  function loadSeriesSoFar(game, host) {
+    if (!game.game_type || game.game_type === "R") return;
+    fetchJSON("/api/series?game=" + game.game_pk).then(function (d) {
+      var all = d.games || [];
+      var idx = -1;
+      all.forEach(function (g, i) { if (g.current) idx = i; });
+      var prev = all.slice(0, idx < 0 ? all.length : idx).filter(function (g) { return g.state === "final"; });
+      if (!prev.length) return;
+      var first = prev[0];
+      var label = first.series ? first.series.label.split(" · ")[0] : "Series";
+      var html = '<div class="section-label">' + escapeHtml(label) + ' so far</div><div class="series-list">';
+      prev.forEach(function (g) {
+        var row = '<div class="sg-head"><span class="sg-game">Game ' + escapeHtml(g.series_game || "") + '</span>' +
+          '<span class="sg-date">' + escapeHtml(etDate(g.date, { weekday: "short", month: "short", day: "numeric" })) +
+          ' · ' + escapeHtml(g.venue && g.venue.name || "") + '</span></div>';
+        row += '<table class="sg-line"><thead><tr><th></th><th>R</th><th>H</th><th>E</th></tr></thead><tbody>';
+        ["away", "home"].forEach(function (s2) {
+          var t = g[s2], r = (g.rhe && g.rhe[s2]) || {};
+          row += '<tr class="' + (t.winner ? "win" : "") + '"><td><span class="abbr-chip">' + escapeHtml(t.abbr || "") + '</span>' +
+            escapeHtml(t.short || t.name) + '</td><td>' + (r.runs === undefined || r.runs === null ? (t.score === null || t.score === undefined ? "–" : t.score) : r.runs) +
+            '</td><td>' + (r.hits === undefined || r.hits === null ? "–" : r.hits) + '</td><td>' + (r.errors === undefined || r.errors === null ? "–" : r.errors) + '</td></tr>';
+        });
+        row += '</tbody></table>';
+        var dec = [];
+        if (g.decisions) {
+          [["winner", "W"], ["loser", "L"], ["save", "S"]].forEach(function (k) {
+            var p = g.decisions[k[0]];
+            if (p) dec.push(k[1] + ": " + playerLink(p.id, p.name));
+          });
+        }
+        var extra = g.innings && g.innings > 9 ? "Final/" + g.innings : "Final";
+        row += '<div class="sg-foot"><span>' + extra + (dec.length ? " · " + dec.join(" · ") : "") + '</span>' +
+          (g.ready ? '<a class="sg-go" href="#/game/' + g.date + '/' + g.game_pk + '">Matchups &rarr;</a>' : "") + '</div>';
+        html += '<div class="sg">' + row + '</div>';
+      });
+      host.innerHTML = html + '</div>';
+      host.hidden = false;
+    }).catch(function () {});
   }
 
   // ---- Starting pitchers overview ----

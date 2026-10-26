@@ -217,3 +217,12 @@ def get_scoreboard(start_date: str, end_date: str) -> dict:
     status -- one call feeds the homepage (last night, today, coming up)."""
     return _get("schedule", {"sportId": 1, "startDate": start_date, "endDate": end_date,
                              "hydrate": "linescore,team,probablePitcher,seriesStatus,venue"})
+
+
+def get_series_games(team_id: int, opponent_id: int, season: str, game_type: str) -> dict:
+    """Every game between two teams of one game type in a season (e.g. the
+    World Series, gameType "W"), with scores and winning/losing/save
+    pitchers -- for a postseason game page's "series so far"."""
+    return _get("schedule", {"sportId": 1, "teamId": team_id, "opponentId": opponent_id, "season": season,
+                             "gameType": game_type,
+                             "hydrate": "linescore,decisions,probablePitcher,team,seriesStatus,venue"})

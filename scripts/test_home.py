@@ -26,6 +26,7 @@ import mlb_api  # noqa: E402
 import parsing  # noqa: E402
 
 WS = json.loads((ROOT / "data" / "sample_schedule_ws_2026.json").read_text())
+SERIES = json.loads((ROOT / "data" / "sample_series_ws_2026.json").read_text())
 
 
 def test_parse_scoreboard():
@@ -99,6 +100,35 @@ def test_slate_off_day_shows_whats_next():
     print("test_slate_off_day_shows_whats_next OK: Oct 25 off day -> G3 (ready), G4, G5; last scores Oct 24")
 
 
+def test_series_so_far():
+    """Game 3's page lists the World Series games before it: MLB's real
+    Brewers-Rays schedule (gameType W), with R/H/E and W/L/S."""
+    from api import app as A
+    calls = []
+    mlb_api.get_series_games = lambda t, o, season, gt: calls.append((t, o, season, gt)) or SERIES
+    conn = db.connect()
+    conn.execute("INSERT OR REPLACE INTO games (game_pk, game_date, game_date_time, game_type, home_team_id, away_team_id) "
+                 "VALUES (849805, '2026-10-23', '2026-10-24T00:00:00Z', 'W', 158, 139)")
+    conn.execute("INSERT OR REPLACE INTO games (game_pk, game_date, game_type, home_team_id, away_team_id) "
+                 "VALUES (1, '2026-09-01', 'R', 158, 139)")
+    conn.commit()
+    conn.close()
+    c = A.app.test_client()
+    d = c.get("/api/series?game=849804").get_json()
+    assert calls == [(139, 158, "2026", "W")], calls
+    gs = d["games"]
+    assert [g["series_game"] for g in gs] == [1, 2, 3, 4, 5, 6, 7]
+    assert [g["current"] for g in gs].index(True) == 2 and [g["ready"] for g in gs][:3] == [True, False, True]
+    g1, g2 = gs[0], gs[1]
+    assert g1["rhe"] == {"away": {"runs": 2, "hits": 7, "errors": 0}, "home": {"runs": 3, "hits": 8, "errors": 0}}
+    assert g1["decisions"]["winner"]["name"] == "Jacob Misiorowski" and g1["decisions"]["save"]["name"] == "Trevor Megill"
+    assert g2["rhe"]["home"] == {"runs": 5, "hits": 11, "errors": 1} and g2["decisions"]["loser"]["name"] == "Tyler Wells"
+    assert gs[2]["rhe"] is None and gs[2]["decisions"] is None
+    assert c.get("/api/series?game=1").get_json()["games"] == []        # regular season: nothing
+    assert c.get("/api/series?game=999").status_code == 404
+    print("test_series_so_far OK: G3 page -> G1 TB 2-3 MIL (W Misiorowski, S Megill), G2 TB 4-5 MIL")
+
+
 def test_refresh_upcoming_pulls_next_three_days():
     seen = {"ingest": [], "probables": []}
     orig = (ingest_daily.ingest_date, ingest_daily.refresh_probable_pitchers)
@@ -142,6 +172,7 @@ def test_header_and_teams_page():
 if __name__ == "__main__":
     test_parse_scoreboard()
     test_slate_off_day_shows_whats_next()
+    test_series_so_far()
     test_refresh_upcoming_pulls_next_three_days()
     test_header_and_teams_page()
     print("\nAll home tests passed.")

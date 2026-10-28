@@ -217,20 +217,14 @@
   .matchup-at { font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 15px; color: var(--muted); flex-shrink: 0; }
   .series-sec { display: flex; flex-direction: column; gap: 10px; }
   .series-sec .section-label { margin-bottom: 0; }
-  .series-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
-  .sg { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-  .sg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .sg-game { font-family: var(--font-display); font-weight: 600; font-size: 15.5px; }
-  .sg-date { font-size: 12px; color: var(--muted); text-align: right; }
-  .sg-line { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  .sg-line th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; text-align: right; padding: 0 0 4px 10px; width: 30px; }
-  .sg-line td { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; padding: 3px 0 3px 10px; color: var(--muted); }
-  .sg-line td:first-child { text-align: left; font-family: var(--font-body); padding-left: 0; }
-  .sg-line td:first-child .abbr-chip { min-width: 38px; font-size: 11px; margin-right: 8px; padding: 3px 5px; }
-  .sg-line tr.win td { color: var(--ink); font-weight: 600; }
-  .sg-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
-  .sg-foot .plink { color: var(--ink); }
-  .sg-go { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .series-list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; }
+  .sg { display: flex; align-items: baseline; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); color: inherit; text-decoration: none; font-size: 14px; }
+  .sg:first-child { border-top: 0; }
+  a.sg:hover .sg-score { color: var(--accent); }
+  .sg-game { font-weight: 600; white-space: nowrap; }
+  .sg-date { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .sg-score { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  .sg-score strong { color: var(--ink); font-weight: 600; }
   .matchup-series { font-size: 13.5px; font-weight: 600; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
   .matchup-time { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); margin-top: 12px; }
   .matchup-sub { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
@@ -1164,10 +1158,6 @@
       seriesHost.hidden = false;
     }).catch(function () {});
 
-    var seriesSec = el('<div class="series-sec" hidden></div>');
-    app.appendChild(seriesSec);
-    loadSeriesSoFar(game, seriesSec);
-
     app.appendChild(el('<div class="section-label">Starting Pitchers</div>'));
     app.appendChild(renderStarterCards(game));
 
@@ -1183,6 +1173,11 @@
     app.appendChild(el('<div class="section-label">Bullpen Watch</div>'));
     app.appendChild(renderBullpenSection(game));
 
+    // Postseason: earlier games of this series, at the bottom (out of the way of the matchup data).
+    var seriesSec = el('<div class="series-sec" hidden></div>');
+    app.appendChild(seriesSec);
+    loadSeriesSoFar(game, seriesSec);
+
     app.appendChild(el('<p class="tabs-note">More planned here — lineup confirmations and market data.</p>'));
   }
 
@@ -1197,30 +1192,20 @@
       if (!prev.length) return;
       var first = prev[0];
       var label = first.series ? first.series.label.split(" · ")[0] : "Series";
+      // Just the result of each earlier game: "Game 1 · Fri, Oct 23  TB 2, MIL 3".
       var html = '<div class="section-label">' + escapeHtml(label) + ' so far</div><div class="series-list">';
       prev.forEach(function (g) {
-        var row = '<div class="sg-head"><span class="sg-game">Game ' + escapeHtml(g.series_game || "") + '</span>' +
-          '<span class="sg-date">' + escapeHtml(etDate(g.date, { weekday: "short", month: "short", day: "numeric" })) +
-          ' · ' + escapeHtml(g.venue && g.venue.name || "") + '</span></div>';
-        row += '<table class="sg-line"><thead><tr><th></th><th>R</th><th>H</th><th>E</th></tr></thead><tbody>';
-        ["away", "home"].forEach(function (s2) {
-          var t = g[s2], r = (g.rhe && g.rhe[s2]) || {};
-          row += '<tr class="' + (t.winner ? "win" : "") + '"><td><span class="abbr-chip">' + escapeHtml(t.abbr || "") + '</span>' +
-            escapeHtml(t.short || t.name) + '</td><td>' + (r.runs === undefined || r.runs === null ? (t.score === null || t.score === undefined ? "–" : t.score) : r.runs) +
-            '</td><td>' + (r.hits === undefined || r.hits === null ? "–" : r.hits) + '</td><td>' + (r.errors === undefined || r.errors === null ? "–" : r.errors) + '</td></tr>';
-        });
-        row += '</tbody></table>';
-        var dec = [];
-        if (g.decisions) {
-          [["winner", "W"], ["loser", "L"], ["save", "S"]].forEach(function (k) {
-            var p = g.decisions[k[0]];
-            if (p) dec.push(k[1] + ": " + playerLink(p.id, p.name));
-          });
-        }
-        var extra = g.innings && g.innings > 9 ? "Final/" + g.innings : "Final";
-        row += '<div class="sg-foot"><span>' + extra + (dec.length ? " · " + dec.join(" · ") : "") + '</span>' +
-          (g.ready ? '<a class="sg-go" href="#/game/' + g.date + '/' + g.game_pk + '">Matchups &rarr;</a>' : "") + '</div>';
-        html += '<div class="sg">' + row + '</div>';
+        var score = ["away", "home"].map(function (s2) {
+          var t = g[s2];
+          var txt = escapeHtml(t.abbr || t.short || "") + " " + (t.score === null || t.score === undefined ? "–" : t.score);
+          return t.winner ? "<strong>" + txt + "</strong>" : txt;
+        }).join(", ");
+        var head = '<span class="sg-game">Game ' + escapeHtml(g.series_game || "") + '</span>' +
+          '<span class="sg-date">' + escapeHtml(etDate(g.date, { weekday: "short", month: "short", day: "numeric" })) + '</span>';
+        var tail = '<span class="sg-score">' + score + (g.innings && g.innings > 9 ? ' <span class="sg-date">(' + g.innings + ')</span>' : "") + '</span>';
+        html += g.ready
+          ? '<a class="sg" href="#/game/' + g.date + '/' + g.game_pk + '">' + head + tail + '</a>'
+          : '<div class="sg">' + head + tail + '</div>';
       });
       host.innerHTML = html + '</div>';
       host.hidden = false;
